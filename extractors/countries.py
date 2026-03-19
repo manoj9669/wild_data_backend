@@ -10,7 +10,9 @@ from extractors.greece import fetch_greece
 
 # ── USA — USGS + NPS ──────────────────────────────────────────────────────────
 import os
-NPS_API_KEY = os.getenv("USA_NPS_KEY", "DEMO_KEY")
+NPS_API_KEY       = os.getenv("USA_NPS_KEY", "DEMO_KEY")
+GEONAMES_USERNAME = os.getenv("GEONAMES_USERNAME", "demo")
+DATA_GOV_IN_KEY   = os.getenv("DATA_GOV_IN_KEY", "")
 
 async def fetch_usa(
     lat: float, lng: float, radius_km: float, feature_ids: List[str]
@@ -19,7 +21,11 @@ async def fetch_usa(
     USA: National Park Service API (free, no key needed for basic endpoints)
     + USGS Geographic Names Information System (GNIS)
     """
-    # NPS — find parks near coordinates
+    # NPS — find parks near coordinates (bounding box to narrow results)
+    import math as _math
+    _deg = radius_km / 111.0
+    _bbox = f"{lng-_deg},{lat-_deg},{lng+_deg},{lat+_deg}"
+
     try:
         await rate_limiter.wait("developer.nps.gov", 0.5)
         async with httpx.AsyncClient(timeout=30) as client:
@@ -31,6 +37,8 @@ async def fetch_usa(
                     "q": "",
                     "fields": "images,description,url",
                     "sort": "relevance",
+                    "latLong": f"{lat},{lng}",
+                    "radius": int(radius_km),
                 },
                 headers={"X-Api-Key": NPS_API_KEY},
             )
@@ -77,70 +85,75 @@ async def fetch_usa(
     except Exception as e:
         print(f"[USA NPS] error: {e}")
 
-    # USGS GNIS — Geographic Names (waterfalls, peaks, streams)
-    feature_class_map = {
-        "waterfall": "Falls",
-        "peak": "Summit",
-        "cave": "Cave",
-        "beach": "Beach",
-        "hot_spring": "Spring",
-        "waterway": "Lake",
+    # GeoNames.org — mirrors USGS GNIS data, correct working endpoint
+    # Free account required: geonames.org/login — set GEONAMES_USERNAME env var
+    geonames_feature_map = {
+        "waterfall":  ("H", "FLLS"),   # Hydrographic / Falls
+        "peak":       ("T", "PK"),     # Mountain / Peak
+        "cave":       ("H", "CAVE"),   # Hydrographic / Cave
+        "beach":      ("H", "BCH"),    # Hydrographic / Beach
+        "hot_spring": ("H", "SPNG"),   # Hydrographic / Spring
+        "waterway":   ("H", "LK"),     # Hydrographic / Lake
+        "park":       ("L", "PRK"),    # Area / Park
     }
 
     for fid in feature_ids:
-        fc = feature_class_map.get(fid)
-        if not fc:
+        fc_pair = geonames_feature_map.get(fid)
+        if not fc_pair:
             continue
+        fc_class, fc_code = fc_pair
         try:
-            await rate_limiter.wait("geonames.usgs.gov", 1.0)
+            await rate_limiter.wait("api.geonames.org", 1.0)
             async with httpx.AsyncClient(timeout=30) as client:
-                # USGS GNIS correct endpoint
                 resp = await client.get(
-                    "https://geonames.usgs.gov/api/geonames/search",
+                    "http://api.geonames.org/searchJSON",
                     params={
-                        "featureClass": fc,
-                        "north": lat + radius_km/111,
-                        "south": lat - radius_km/111,
-                        "east": lng + radius_km/111,
-                        "west": lng - radius_km/111,
+                        "featureClass": fc_class,
+                        "featureCode":  fc_code,
+                        "north": lat + radius_km / 111,
+                        "south": lat - radius_km / 111,
+                        "east":  lng + radius_km / 111,
+                        "west":  lng - radius_km / 111,
                         "maxRows": 100,
-                        "type": "json",
+                        "username": GEONAMES_USERNAME,
                     },
                 )
                 if resp.status_code != 200:
-                    print(f"[USA USGS] HTTP {resp.status_code}: {resp.text[:100]}")
+                    print(f"[USA GeoNames] HTTP {resp.status_code}: {resp.text[:100]}")
                     continue
                 data = resp.json()
+                import math
                 for item in data.get("geonames", []):
                     try:
                         f_lat = float(item.get("lat", 0))
                         f_lng = float(item.get("lng", 0))
                     except (TypeError, ValueError):
                         continue
-                    import math
                     dlat = math.radians(f_lat - lat)
                     dlng_v = math.radians(f_lng - lng)
                     a = math.sin(dlat/2)**2 + math.cos(math.radians(lat)) * math.cos(math.radians(f_lat)) * math.sin(dlng_v/2)**2
                     if 6371 * 2 * math.atan2(math.sqrt(a), math.sqrt(1-a)) > radius_km:
                         continue
+                    elev = item.get("elevation") or item.get("srtm3", "")
                     yield {
-                        "name": item.get("name", ""),
-                        "type": fc,
-                        "lat": f_lat,
-                        "lng": f_lng,
-                        "elevation": str(item.get("elevation", "")) + "m" if item.get("elevation") else "",
+                        "name":        item.get("name", ""),
+                        "type":        item.get("fcodeName", fid),
+                        "type_id":     fid,
+                        "lat":         f_lat,
+                        "lng":         f_lng,
+                        "elevation":   f"{elev}m" if elev else "",
                         "description": item.get("fcodeName", ""),
-                        "wikipedia": "",  # USGS has no verified wikipedia links
-                        "website": "",
-                        "region": item.get("adminName1", ""),
-                        "country": "United States",
-                        "image": "",
-                        "osm_id": "",
-                        "source": "USGS GNIS (USA)",
-                        "confidence": "High",
+                        "wikipedia":   "",
+                        "website":     "",
+                        "region":      item.get("adminName1", ""),
+                        "country":     "United States",
+                        "image":       "",
+                        "osm_id":      "",
+                        "source":      "GeoNames/USGS GNIS (USA)",
+                        "confidence":  "High",
                     }
         except Exception as e:
-            print(f"[USA USGS] {fid} error: {e}")
+            print(f"[USA GeoNames] {fid} error: {e}")
 
 
 # ── France — data.gouv.fr ─────────────────────────────────────────────────────
@@ -162,71 +175,64 @@ async def fetch_france(
         a = math.sin(dlat/2)**2 + math.cos(math.radians(lat)) * math.cos(math.radians(f_lat)) * math.sin(dlng/2)**2
         return 6371 * 2 * math.atan2(math.sqrt(a), math.sqrt(1-a)) <= radius_km
 
-    # 1. IGN Géoportail feature search (official French topo data)
-    IGN_TYPES = {
-        "waterfall": "Cascade",
-        "peak": "Sommet",
-        "lake": "Lac",
-        "cave": "Grotte",
-        "beach": "Plage",
-        "viewpoint": "Belvédère",
-        "hot_spring": "Source thermale",
-        "glacier": "Glacier",
-    }
+    # 1. EEA Natura2000 WFS — EU protected areas in France (free, no key)
     deg = radius_km / 111.0
-    bbox = f"{lng-deg},{lat-deg},{lng+deg},{lat+deg}"
-
-    for fid in (feature_ids or list(IGN_TYPES.keys())):
-        ign_type = IGN_TYPES.get(fid)
-        if not ign_type:
-            continue
-        try:
-            await rate_limiter.wait("wxs.ign.fr", 0.5)
-            async with httpx.AsyncClient(timeout=20) as client:
-                resp = await client.get(
-                    "https://wxs.ign.fr/essentiels/geoportail/ols/apis/completion",
-                    params={
-                        "text": ign_type,
-                        "type": "StreetAddress,PositionOfInterest",
-                        "maximumResponses": 20,
-                        "bbox": bbox,
-                    },
-                )
-                if resp.status_code == 200:
-                    data = resp.json()
-                    for item in data.get("results", []):
-                        name = item.get("fulltext", "") or item.get("street", "")
-                        if not name:
-                            continue
-                        coords = item.get("position", "").split(",") if item.get("position") else []
-                        if len(coords) < 2:
-                            continue
-                        try:
-                            f_lat, f_lng = float(coords[0]), float(coords[1])
-                        except ValueError:
-                            continue
-                        if not in_radius(f_lat, f_lng):
-                            continue
-                        from extractors.wikipedia import guess_type
-                        type_label, _ = guess_type(name)
-                        yield {
-                            "name": name,
-                            "type": type_label,
-                            "lat": round(f_lat, 6),
-                            "lng": round(f_lng, 6),
-                            "elevation": "",
-                            "description": f"{ign_type} — IGN official data",
-                            "wikipedia": "",
-                            "website": "https://www.geoportail.gouv.fr",
-                            "region": item.get("departement", ""),
-                            "country": "France",
-                            "image": "",
-                            "osm_id": "",
-                            "source": "IGN Géoportail (France)",
-                            "confidence": "High",
-                        }
-        except Exception as e:
-            print(f"[France IGN] {fid} error: {e}")
+    wfs_url = "https://bio.discomap.eea.europa.eu/arcgis/services/ProtectedSites/Natura2000Sites_WGS84/MapServer/WFSServer"
+    try:
+        await rate_limiter.wait("bio.discomap.eea.europa.eu", 1.0)
+        async with httpx.AsyncClient(timeout=25) as client:
+            resp = await client.get(
+                wfs_url,
+                params={
+                    "SERVICE":      "WFS",
+                    "VERSION":      "2.0.0",
+                    "REQUEST":      "GetFeature",
+                    "TYPENAMES":    "ProtectedSites_Natura2000Sites_WGS84:Natura2000Sites",
+                    "OUTPUTFORMAT": "application/json",
+                    "CQL_FILTER":   (
+                        f"BBOX(Shape,{lng-deg},{lat-deg},{lng+deg},{lat+deg},'EPSG:4326')"
+                        f" AND MS_CODE LIKE 'FR%'"
+                    ),
+                    "COUNT": "50",
+                },
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                for feat in data.get("features", []):
+                    props = feat.get("properties", {})
+                    geom  = feat.get("geometry", {})
+                    f_lat, f_lng = None, None
+                    if geom.get("type") == "Point":
+                        f_lng, f_lat = geom["coordinates"][:2]
+                    elif geom.get("type") in ("Polygon", "MultiPolygon"):
+                        coords = geom["coordinates"]
+                        flat = coords[0][0] if geom["type"] == "Polygon" else coords[0][0][0]
+                        f_lng, f_lat = flat[0], flat[1]
+                    if f_lat is None or not in_radius(float(f_lat), float(f_lng)):
+                        continue
+                    site_type = props.get("MS_SITETYPE", "")
+                    type_label = "Nature Reserve" if "B" in site_type else "National Park"
+                    yield {
+                        "name":        props.get("MS_NAME") or props.get("SITENAME", ""),
+                        "type":        type_label,
+                        "type_id":     "park",
+                        "lat":         round(float(f_lat), 6),
+                        "lng":         round(float(f_lng), 6),
+                        "elevation":   "",
+                        "description": f"Natura2000 protected site ({site_type}) — {props.get('MS_AREAHA','?')} ha",
+                        "wikipedia":   "",
+                        "website":     f"https://natura2000.eea.europa.eu/Natura2000/SDF/{props.get('MS_CODE','')}",
+                        "region":      props.get("MS_CODE", "")[:4],
+                        "country":     "France",
+                        "image":       "",
+                        "osm_id":      "",
+                        "source":      "Natura2000/EEA (France)",
+                        "confidence":  "High",
+                    }
+            else:
+                print(f"[France Natura2000] HTTP {resp.status_code}")
+    except Exception as e:
+        print(f"[France Natura2000] error: {e}")
 
     # 2. French National Parks — hardcoded official list
     FRENCH_NATIONAL_PARKS = [
@@ -332,6 +338,10 @@ async def fetch_uk(
         "Nature Reserve", "River", "Stream", "Island", "Summit", "Nature Reserve",
         "Area of Outstanding Natural Beauty", "Site of Special Scientific Interest",
     ]
+
+    if not OS_API_KEY:
+        print("[UK/OS] OS_API_KEY not set — skipping Ordnance Survey. Register free at osdatahub.os.uk and set OS_API_KEY env var.")
+        return
 
     seen = set()
     radius_m = int(min(radius_km * 1000, 100000))  # OS max 100km
@@ -753,15 +763,15 @@ async def fetch_india(
     except Exception as e:
         print(f"[India Wikipedia] error: {e}")
 
-    # data.gov.in — Protected Areas
-    if "park" in feature_ids:
+    # data.gov.in — Protected Areas (requires DATA_GOV_IN_KEY env var)
+    if "park" in feature_ids and DATA_GOV_IN_KEY:
         try:
             await rate_limiter.wait("api.data.gov.in", 1.0)
             async with httpx.AsyncClient(timeout=20) as client:
                 resp = await client.get(
                     "https://api.data.gov.in/resource/f1a8c4ca-186e-4b46-be9e-ae32fd54e9fa",
                     params={
-                        "api-key": "579b464db66ec23bdd000001cdd3946e44ce4aad7209ff7b23ac571b",
+                        "api-key": DATA_GOV_IN_KEY,
                         "format": "json",
                         "limit": 100,
                     },

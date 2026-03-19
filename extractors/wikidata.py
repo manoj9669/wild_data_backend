@@ -84,10 +84,12 @@ async def fetch_wikidata(
 
         sparql = f"""
 SELECT DISTINCT ?item ?itemLabel ?coord ?elev ?desc ?image ?article WHERE {{
+  SERVICE wikibase:around {{
+    ?item wdt:P625 ?coord .
+    bd:serviceParam wikibase:center "Point({lng} {lat})"^^geo:wktLiteral .
+    bd:serviceParam wikibase:radius "{radius_km}" .
+  }}
   ?item wdt:P31/wdt:P279* {wd_class} .
-  ?item wdt:P625 ?coord .
-  BIND(geof:distance(?coord, "Point({lng} {lat})"^^geo:wktLiteral) AS ?dist)
-  FILTER(?dist < {radius_km})
   OPTIONAL {{ ?item wdt:P2044 ?elev }}
   OPTIONAL {{ ?item schema:description ?desc . FILTER(LANG(?desc) = "en") }}
   OPTIONAL {{ ?item wdt:P18 ?image }}
@@ -97,7 +99,6 @@ SELECT DISTINCT ?item ?itemLabel ?coord ?elev ?desc ?image ?article WHERE {{
   }}
   SERVICE wikibase:label {{ bd:serviceParam wikibase:language "en,hi,fr,de,es,it,ja,zh". }}
 }}
-ORDER BY ?dist
 LIMIT {effective_limit}
 """.strip()
 

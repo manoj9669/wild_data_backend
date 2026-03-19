@@ -425,9 +425,9 @@ async function startExtraction() {
     features: [...selectedFeatures].join(','),
     limit: document.getElementById('limitInput').value,
     country_code: (selectedPlace.address?.country_code || '').toUpperCase(),
-    enrich_wiki: document.getElementById('enrichWiki').checked,
-    enrich_elevation: document.getElementById('enrichElev').checked,
-    enrich_geocoding: document.getElementById('enrichGeo').checked,
+    do_enrich_wiki: document.getElementById('enrichWiki').checked,
+    do_enrich_elevation: document.getElementById('enrichElev').checked,
+    do_enrich_geocoding: document.getElementById('enrichGeo').checked,
   });
 
   log('Starting extraction...', 'info');
