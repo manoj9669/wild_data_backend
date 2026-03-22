@@ -68,13 +68,13 @@ SELECT DISTINCT ?item ?itemLabel ?type ?coord ?elev ?desc ?image ?article WHERE 
   }}
   VALUES ?type {{ {values_clause} }}
   ?item wdt:P31 ?type .
+  # Require a Wikipedia article — filters out obscure/misclassified items.
+  # If it's not notable enough for Wikipedia it belongs in OSM/GeoNames, not Wikidata.
+  ?article schema:about ?item ;
+           schema:isPartOf <https://en.wikipedia.org/> .
   OPTIONAL {{ ?item wdt:P2044 ?elev }}
   OPTIONAL {{ ?item schema:description ?desc . FILTER(LANG(?desc) = "en") }}
   OPTIONAL {{ ?item wdt:P18 ?image }}
-  OPTIONAL {{
-    ?article schema:about ?item ;
-             schema:isPartOf <https://en.wikipedia.org/> .
-  }}
   SERVICE wikibase:label {{ bd:serviceParam wikibase:language "en,hi,fr,de,es,it,ja,zh". }}
 }}
 LIMIT {effective_limit}

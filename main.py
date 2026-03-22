@@ -7,7 +7,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, JSONResponse
 
 from extractors.osm import fetch_osm
-from extractors.wikidata import fetch_wikidata
 from extractors.wikipedia import fetch_wikipedia_geo, enrich_wikipedia_descriptions
 from extractors.geonames import fetch_geonames
 from extractors.waymarked import fetch_waymarked
@@ -81,20 +80,7 @@ async def extract(
         all_results = []
 
         try:
-            # ── Stage 1: Wikidata ──────────────────────────────────────────
-            yield json.dumps({"type": "progress", "stage": "wikidata", "message": "Querying Wikidata SPARQL...", "count": 0}) + "\n"
-            batch = []
-            async for item in fetch_wikidata(lat, lng, radius_km, feature_ids, limit):
-                all_results.append(item)
-                batch.append(item)
-                if len(batch) >= 20:
-                    yield json.dumps({"type": "results", "data": batch}) + "\n"
-                    batch = []
-            if batch:
-                yield json.dumps({"type": "results", "data": batch}) + "\n"
-            yield json.dumps({"type": "progress", "stage": "wikidata", "message": f"Wikidata done — {len(all_results)} features", "count": len(all_results)}) + "\n"
-
-            # ── Stage 2: OSM ───────────────────────────────────────────────
+            # ── Stage 1: OSM ───────────────────────────────────────────────
             yield json.dumps({"type": "progress", "stage": "osm", "message": f"Querying OpenStreetMap (quality: {quality})...", "count": len(all_results)}) + "\n"
             osm_limit = limit if quality == "high" else min(limit, 150)
             batch = []
@@ -225,8 +211,8 @@ async def root():
         "version": "2.0.0",
         "status": "running",
         "data_sources": [
-            "Wikidata SPARQL", "OpenStreetMap (Overpass)", "Wikipedia GeoSearch",
-            "GeoNames.org (global)", "Waymarked Trails", "Protected Planet / WDPA",
+            "OpenStreetMap (Overpass)", "GeoNames.org (global)", "Wikipedia GeoSearch",
+            "Waymarked Trails", "Protected Planet / WDPA",
             "NPS (USA)", "Parcs Nationaux (France)", "Ordnance Survey (UK)",
             "DOC (New Zealand)", "Parks Australia", "GSI (Japan)", "data.gov.in (India)",
             "Geodata.gov.gr (Greece)", "Kartverket SSR (Norway)", "Parks Canada",

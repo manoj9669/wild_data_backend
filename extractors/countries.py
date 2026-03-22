@@ -324,69 +324,99 @@ async def fetch_uk(
     lat: float, lng: float, radius_km: float, feature_ids: List[str]
 ) -> AsyncGenerator[Dict[str, Any], None]:
     """
-    UK: Ordnance Survey Names API (official UK geographic names database)
-    Covers: peaks, lakes, waterfalls, forests, national parks, valleys, caves,
-            beaches, rivers, moors — all official OS named features.
-    API key: OS Data Hub free tier (1M transactions/month)
+    UK: Ordnance Survey Names API — official UK geographic names database.
+    Free tier: 1M transactions/month. Register at osdatahub.os.uk → set OS_API_KEY.
+
+    Fixed bugs vs previous version:
+    - 'bbox' renamed to 'bounds' (correct OS Names API parameter name)
+    - LOCAL_TYPE values with spaces now correctly quoted in fq
+    - Query terms per type now use real UK place name vocabulary
     """
-
-    # OS Names categories relevant to outdoor features
-    OS_LOCAL_TYPES = [
-        "Waterfall", "Lake", "Loch", "Reservoir", "Mountain", "Hill", "Fell",
-        "Forest", "Wood", "National Park", "Country Park", "Valley", "Glen",
-        "Dale", "Gorge", "Cave", "Cliff", "Bay", "Beach", "Moor", "Heath",
-        "Nature Reserve", "River", "Stream", "Island", "Summit", "Nature Reserve",
-        "Area of Outstanding Natural Beauty", "Site of Special Scientific Interest",
-    ]
-
     if not OS_API_KEY:
-        print("[UK/OS] OS_API_KEY not set — skipping Ordnance Survey. Register free at osdatahub.os.uk and set OS_API_KEY env var.")
+        print("[UK/OS] OS_API_KEY not set — skipping. Register free at osdatahub.os.uk")
         return
 
-    seen = set()
-    radius_m = int(min(radius_km * 1000, 100000))  # OS max 100km
-
-    # OS Names API /find with bbox — returns up to 100 results per query
-    # Correct format: bbox=minX,minY,maxX,maxY (lng/lat order)
     deg = radius_km / 111.0
-    bbox = f"{lng-deg},{lat-deg},{lng+deg},{lat+deg}"
+    # 'bounds' is the correct parameter name (not 'bbox') — WGS84: minLng,minLat,maxLng,maxLat
+    bounds = f"{lng-deg},{lat-deg},{lng+deg},{lat+deg}"
+    seen = set()
 
-    # Search terms covering all outdoor feature types
-    # OS Names API local types to query
-    # Using LOCAL_TYPE filter via fq parameter — correct OS API format
-    local_types = [
-        "Waterfall", "Lake", "Loch", "Reservoir", "Mountain", "Hill", "Fell",
-        "Forest Or Woodland", "National Park", "Country Park", "Valley", "Glen",
-        "Dale", "Gorge", "Cave", "Cliff", "Bay", "Beach", "Moor Or Heath",
-        "Nature Reserve", "River", "Island", "Summit",
-        "Area Of Outstanding Natural Beauty", "National Scenic Area",
-    ]
+    # For each WildData feature_id: list of (OS_LOCAL_TYPE, [search_terms])
+    # Search terms are real vocabulary that appears in UK place names of each type.
+    # OS Names API searches term against feature names, fq filters by exact LOCAL_TYPE.
+    OS_FEATURE_QUERIES: Dict[str, list] = {
+        "waterfall": [
+            ("Waterfall", ["waterfall", "falls", "force", "foss", "linn", "spout", "ghyll"]),
+        ],
+        "peak": [
+            ("Mountain", ["mountain", "mount", "ben", "beinn", "carn", "cairn", "craig",
+                          "creag", "meall", "sgurr", "stob", "binnein", "bidean"]),
+            ("Hill",     ["hill", "tor", "knoll", "nab", "law", "down", "hump"]),
+            ("Fell",     ["fell", "pike", "hause", "raise", "rigg", "crag"]),
+            ("Summit",   ["summit", "top", "peak", "head"]),
+        ],
+        "waterway": [
+            ("Lake",      ["lake", "mere", "water", "tarn", "pool", "llyn", "llwyn"]),
+            ("Loch",      ["loch", "lochan"]),
+            ("Reservoir", ["reservoir"]),
+        ],
+        "park": [
+            ("National Park",                    ["park", "national", "dartmoor", "exmoor",
+                                                  "snowdonia", "brecon", "cairngorm"]),
+            ("Country Park",                     ["park", "country"]),
+            ("Area Of Outstanding Natural Beauty", ["beauty", "outstanding", "aonb"]),
+            ("Nature Reserve",                   ["reserve", "nature", "sanctuary"]),
+            ("National Scenic Area",             ["scenic", "national"]),
+        ],
+        "forest": [
+            ("Forest Or Woodland", ["forest", "wood", "woodland", "copse", "grove"]),
+        ],
+        "cave": [
+            ("Cave", ["cave", "cavern", "hole", "pot", "grotto", "sinkhole"]),
+        ],
+        "beach": [
+            ("Beach", ["beach", "sands", "strand"]),
+            ("Bay",   ["bay", "cove", "inlet"]),
+        ],
+        "viewpoint": [
+            ("Cliff", ["cliff", "crag", "scar", "edge", "bluff", "scarp"]),
+        ],
+        "hot_spring": [
+            ("Other Hydrological Feature", ["spring", "well", "spa"]),
+        ],
+        "glacier": [
+            ("Other Topographic Feature", ["glacier", "icefield", "neve"]),
+        ],
+    }
+
+    # Only query feature types the user actually requested
+    queries_to_run = []
+    for fid in feature_ids:
+        if fid in OS_FEATURE_QUERIES:
+            for local_type, search_terms in OS_FEATURE_QUERIES[fid]:
+                for term in search_terms:
+                    queries_to_run.append((fid, local_type, term))
 
     async with httpx.AsyncClient(timeout=30) as client:
-        for local_type in local_types:
+        for fid, local_type, term in queries_to_run:
             try:
-                await rate_limiter.wait("api.os.uk", 0.7)
-                # OS Names API: query = simplified type name, fq filters by exact LOCAL_TYPE
-                query_term = local_type.split()[0].lower()  # e.g. "Moor Or Heath" → "moor"
+                await rate_limiter.wait("api.os.uk", 0.5)
                 resp = await client.get(
                     "https://api.os.uk/search/names/v1/find",
                     params={
-                        "query":      query_term,
-                        "fq":         f"LOCAL_TYPE:{local_type}",
-                        "bbox":       bbox,
+                        "query":      term,
+                        "fq":         f'LOCAL_TYPE:"{local_type}"',  # quoted for multi-word types
+                        "bounds":     bounds,                         # correct param (was 'bbox')
                         "maxresults": 100,
                         "key":        OS_API_KEY,
                     },
                 )
                 if resp.status_code != 200:
-                    print(f"[UK/OS] {local_type} → HTTP {resp.status_code}: {resp.text[:300]}")
+                    print(f"[UK/OS] {local_type}/{term} → HTTP {resp.status_code}: {resp.text[:200]}")
                     continue
 
                 data = resp.json()
-                features = data.get("results", [])
-                print(f"[UK/OS] {local_type} → {len(features)} results")
-
-                for feat in features:
+                for feat in data.get("results", []):
                     g = feat.get("GAZETTEER_ENTRY", {})
                     name = g.get("NAME1", "") or g.get("NAME2", "")
                     if not name or name in seen:
@@ -394,13 +424,12 @@ async def fetch_uk(
                     f_lat = g.get("LAT")
                     f_lng = g.get("LNG")
                     if f_lat is None or f_lng is None:
-                        # fallback to GEOMETRY coords (BNG - skip, unreliable for lat/lng)
                         continue
                     try:
                         f_lat, f_lng = float(f_lat), float(f_lng)
                     except (TypeError, ValueError):
                         continue
-                    if not (49 < f_lat < 61 and -8 < f_lng < 2):
+                    if not (49 < f_lat < 62 and -9 < f_lng < 3):  # rough UK bounds check
                         continue
                     if not _os_within_radius(lat, lng, f_lat, f_lng, radius_km):
                         continue
@@ -409,10 +438,12 @@ async def fetch_uk(
                     yield {
                         "name":        name,
                         "type":        type_label,
+                        "type_id":     type_id,
                         "lat":         round(f_lat, 6),
                         "lng":         round(f_lng, 6),
                         "elevation":   "",
-                        "region":      g.get("DISTRICT_BOROUGH", "") or g.get("COUNTY_UNITARY", "") or g.get("COUNTY_UNITARY_BOROUGH", ""),
+                        "region":      (g.get("DISTRICT_BOROUGH") or g.get("COUNTY_UNITARY")
+                                        or g.get("COUNTY_UNITARY_BOROUGH") or ""),
                         "country":     "United Kingdom",
                         "description": local_type,
                         "wikipedia":   "",
@@ -423,7 +454,7 @@ async def fetch_uk(
                         "confidence":  "High",
                     }
             except Exception as e:
-                print(f"[UK/OS] {local_type} error: {e}")
+                print(f"[UK/OS] {local_type}/{term} error: {e}")
                 continue
 
 
