@@ -5,7 +5,6 @@ from utils.rate_limiter import rate_limiter
 OVERPASS_URL = "https://overpass-api.de/api/interpreter"
 
 FEATURE_TAGS = {
-    "waterfall":    ('node', '"waterway"="waterfall"'),
     "hiking":       ('relation', '"route"="hiking"'),
     "mtb":          ('relation', '"route"="mtb"'),
     "motorbiking":  ('relation', '"route"="motorcycle"'),
@@ -15,7 +14,7 @@ FEATURE_TAGS = {
     "camp":         ('node', '"tourism"="camp_site"'),
     "cave":         ('node', '"natural"="cave_entrance"'),
     "hot_spring":   ('node', '"natural"="hot_spring"'),
-    "waterway":     ('node|way', '"natural"~"water"'),  # lakes/ponds only — no rivers
+    "waterway":     ('node|way', '"natural"="water"'),   # lakes/ponds
     "beach":        ('node|way', '"natural"="beach"'),
     "glacier":      ('way', '"natural"="glacier"'),
     "volcano":      ('node', '"natural"="volcano"'),
@@ -29,6 +28,29 @@ FEATURE_LABELS = {
     "hot_spring": "Hot Spring", "waterway": "Lake / Pond", "beach": "Beach",
     "glacier": "Glacier", "volcano": "Volcano", "forest": "Protected Forest",
 }
+
+# Waterfall uses a union query to include natural pools & swimming areas
+WATERFALL_QUERY_TMPL = """[out:json][timeout:{timeout}];
+(
+  node["waterway"="waterfall"](around:{radius},{lat},{lng});
+  node["natural"="water"]["water"="pool"](around:{radius},{lat},{lng});
+  way["natural"="water"]["water"="pool"](around:{radius},{lat},{lng});
+  node["leisure"="swimming_area"](around:{radius},{lat},{lng});
+  way["leisure"="swimming_area"](around:{radius},{lat},{lng});
+);
+out tags center {limit};"""
+
+
+def _waterfall_type(tags: dict) -> str:
+    """Determine display label from OSM tags for a waterfall union result."""
+    if tags.get("waterway") == "waterfall":
+        return "Waterfall"
+    if tags.get("leisure") == "swimming_area":
+        return "Swimming Area"
+    if tags.get("water") == "pool":
+        return "Natural Pool"
+    return "Waterfall"
+
 
 async def fetch_osm(
     lat: float,
@@ -44,6 +66,60 @@ async def fetch_osm(
     timeout = 60
 
     for fid in feature_ids:
+
+        # ── Waterfall: union query for waterfalls + natural pools ────────────
+        if fid == "waterfall":
+            query = WATERFALL_QUERY_TMPL.format(
+                timeout=timeout, radius=radius_m, lat=lat, lng=lng, limit=limit
+            )
+            try:
+                await rate_limiter.wait("overpass-api.de", 1.5)
+                async with httpx.AsyncClient(timeout=90) as client:
+                    resp = await client.post(
+                        OVERPASS_URL,
+                        data={"data": query},
+                        headers={"Content-Type": "application/x-www-form-urlencoded"},
+                    )
+                    resp.raise_for_status()
+                    data = resp.json()
+
+                for el in data.get("elements", []):
+                    el_lat = el.get("lat") or (el.get("center") or {}).get("lat")
+                    el_lng = el.get("lon") or (el.get("center") or {}).get("lon")
+                    if not el_lat or not el_lng:
+                        continue
+                    tags = el.get("tags", {})
+                    name = tags.get("name:en") or tags.get("name") or tags.get("int_name") or ""
+                    wiki_tag = tags.get("wikipedia", "")
+                    wiki_url = ""
+                    if wiki_tag:
+                        parts = wiki_tag.split(":", 1)
+                        page = parts[1] if len(parts) == 2 else parts[0]
+                        lang = parts[0] if len(parts) == 2 else "en"
+                        wiki_url = f"https://{lang}.wikipedia.org/wiki/{page.replace(' ', '_')}"
+                    confidence = "High" if (name and wiki_url) else "Medium" if name else "Low"
+                    yield {
+                        "name": name,
+                        "type": _waterfall_type(tags),
+                        "type_id": "waterfall",
+                        "lat": el_lat,
+                        "lng": el_lng,
+                        "elevation": tags.get("ele", ""),
+                        "description": tags.get("description") or tags.get("description:en") or "",
+                        "wikipedia": wiki_url,
+                        "website": tags.get("website") or tags.get("url") or "",
+                        "region": tags.get("addr:state") or tags.get("is_in:state") or "",
+                        "country": tags.get("addr:country") or tags.get("is_in:country") or "",
+                        "image": tags.get("image") or tags.get("wikimedia_commons") or "",
+                        "osm_id": f"{el.get('type','node')}/{el.get('id','')}",
+                        "source": "OSM",
+                        "confidence": confidence,
+                    }
+            except Exception as e:
+                print(f"[OSM] waterfall error: {e}")
+            continue
+
+        # ── All other features: simple single-tag query ──────────────────────
         if fid not in FEATURE_TAGS:
             continue
 
@@ -67,9 +143,7 @@ out tags center {limit};"""
                 resp.raise_for_status()
                 data = resp.json()
 
-            elements = data.get("elements", [])
-
-            for el in elements:
+            for el in data.get("elements", []):
                 el_lat = el.get("lat") or (el.get("center") or {}).get("lat")
                 el_lng = el.get("lon") or (el.get("center") or {}).get("lon")
                 if not el_lat or not el_lng:
@@ -90,15 +164,7 @@ out tags center {limit};"""
                     lang = parts[0] if len(parts) == 2 else "en"
                     wiki_url = f"https://{lang}.wikipedia.org/wiki/{page.replace(' ', '_')}"
 
-                # Confidence: High only if has real name + wikipedia tag
-                # Medium if has name only
-                # Low if unnamed
-                if name and wiki_url:
-                    confidence = "High"
-                elif name:
-                    confidence = "Medium"
-                else:
-                    confidence = "Low"
+                confidence = "High" if (name and wiki_url) else "Medium" if name else "Low"
 
                 yield {
                     "name": name,
@@ -108,7 +174,7 @@ out tags center {limit};"""
                     "lng": el_lng,
                     "elevation": tags.get("ele", ""),
                     "description": tags.get("description") or tags.get("description:en") or "",
-                    "wikipedia": wiki_url,  # only set if OSM tag has wikipedia= explicitly
+                    "wikipedia": wiki_url,
                     "website": tags.get("website") or tags.get("url") or "",
                     "region": tags.get("addr:state") or tags.get("is_in:state") or "",
                     "country": tags.get("addr:country") or tags.get("is_in:country") or "",
@@ -119,6 +185,5 @@ out tags center {limit};"""
                 }
 
         except Exception as e:
-            # Log and continue — don't crash entire extraction
             print(f"[OSM] {fid} error: {e}")
             continue

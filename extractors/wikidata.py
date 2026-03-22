@@ -1,58 +1,26 @@
+import re
 import httpx
 from typing import List, Dict, Any, AsyncGenerator
 from utils.rate_limiter import rate_limiter
 
 SPARQL_URL = "https://query.wikidata.org/sparql"
 
-# Wikidata entity IDs for outdoor features
-WIKIDATA_CLASSES = {
-    "waterfall":  "wd:Q瀑布 wd:Q901648",   # replaced below
-    "peak":       "wd:Q8502",
-    "park":       "wd:Q46169",
-    "cave":       "wd:Q35509",
-    "hot_spring": "wd:Q177380",
-    "viewpoint":  "wd:Q578439",
-    "beach":      "wd:Q40080",
-    "waterway":   "wd:Q23397",
-    "glacier":    "wd:Q35666",
-    "volcano":    "wd:Q8072",
-    "forest":     "wd:Q4421",
-    "camp":       "wd:Q832778",
-}
-
-# Correct Wikidata IDs
-WIKIDATA_IDS = {
-    "waterfall":  "wd:Q瀑布",
-    "peak":       "wd:Q8502",
-    "park":       "wd:Q46169",
-    "cave":       "wd:Q35509",
-    "hot_spring": "wd:Q177380",
-    "viewpoint":  "wd:Q578439",
-    "beach":      "wd:Q40080",
-    "waterway":   "wd:Q23397",
-    "glacier":    "wd:Q35666",
-    "volcano":    "wd:Q8072",
-    "forest":     "wd:Q4421",
-}
-
-# Corrected IDs (Chinese char was a placeholder)
-CORRECT_IDS = {
-    "waterfall":  "wd:Q瀑布",
-}
-
-REAL_IDS = {
-    "waterfall":  "wd:Q355304",   # waterfall
-    "peak":       "wd:Q8502",     # mountain
-    "park":       "wd:Q46169",    # national park
-    "cave":       "wd:Q35509",    # cave
-    "hot_spring": "wd:Q177380",   # hot spring
-    "viewpoint":  "wd:Q578439",   # viewpoint
-    "beach":      "wd:Q40080",    # beach
-    "waterway":   "wd:Q23397",    # lake
-    "glacier":    "wd:Q35666",    # glacier
-    "volcano":    "wd:Q8072",     # volcano
-    "forest":     "wd:Q4421",     # forest
-    "camp":       "wd:Q832778",   # campsite
+# Wikidata entity IDs per feature — supports multiple entities (joined in VALUES clause)
+REAL_IDS: Dict[str, List[str]] = {
+    "waterfall":  ["wd:Q355304", "wd:Q913785"],   # waterfall, swimming hole
+    "peak":       ["wd:Q8502"],                    # mountain
+    "park":       ["wd:Q46169", "wd:Q473972"],     # national park, protected area
+    "cave":       ["wd:Q35509"],                   # cave
+    "hot_spring": ["wd:Q177380"],                  # hot spring
+    "viewpoint":  ["wd:Q578439"],                  # viewpoint
+    "beach":      ["wd:Q40080"],                   # beach
+    "waterway":   ["wd:Q23397", "wd:Q4022"],       # lake, river
+    "glacier":    ["wd:Q35666"],                   # glacier
+    "volcano":    ["wd:Q8072"],                    # volcano
+    "forest":     ["wd:Q4421"],                    # forest
+    "camp":       ["wd:Q832778"],                  # campsite
+    "mtb":        ["wd:Q1326645"],                 # mountain biking trail
+    "hiking":     ["wd:Q2143825"],                 # hiking trail
 }
 
 FEATURE_LABELS = {
@@ -60,7 +28,16 @@ FEATURE_LABELS = {
     "cave": "Cave", "hot_spring": "Hot Spring", "viewpoint": "Viewpoint",
     "beach": "Beach", "waterway": "River / Lake", "glacier": "Glacier",
     "volcano": "Volcano", "forest": "Forest", "camp": "Campsite",
+    "mtb": "MTB Trail", "hiking": "Hiking Trail",
 }
+
+# Per-entity label overrides (when a feature has multiple Wikidata classes)
+_ENTITY_LABELS = {
+    "wd:Q913785": "Swimming Hole",
+    "wd:Q4022":   "River",
+    "wd:Q23397":  "Lake",
+}
+
 
 async def fetch_wikidata(
     lat: float,
@@ -70,26 +47,27 @@ async def fetch_wikidata(
     limit: int = 300,
 ) -> AsyncGenerator[Dict[str, Any], None]:
     """
-    Fetch features from Wikidata SPARQL endpoint.
+    Fetch features from Wikidata SPARQL using wikibase:around SERVICE.
     Yields one result dict at a time.
     """
-
     for fid in feature_ids:
-        wd_class = REAL_IDS.get(fid)
-        if not wd_class:
+        wd_classes = REAL_IDS.get(fid)
+        if not wd_classes:
             continue
 
         label = FEATURE_LABELS.get(fid, fid)
         effective_limit = min(limit, 500)
+        values_clause = " ".join(wd_classes)
 
         sparql = f"""
-SELECT DISTINCT ?item ?itemLabel ?coord ?elev ?desc ?image ?article WHERE {{
+SELECT DISTINCT ?item ?itemLabel ?type ?coord ?elev ?desc ?image ?article WHERE {{
   SERVICE wikibase:around {{
-    ?item wdt:P625 ?coord .
-    bd:serviceParam wikibase:center "Point({lng} {lat})"^^geo:wktLiteral .
-    bd:serviceParam wikibase:radius "{radius_km}" .
+    ?item wdt:P625 ?coord.
+    bd:serviceParam wikibase:center "Point({lng} {lat})"^^geo:wktLiteral.
+    bd:serviceParam wikibase:radius "{radius_km}".
   }}
-  ?item wdt:P31/wdt:P279* {wd_class} .
+  VALUES ?type {{ {values_clause} }}
+  ?item wdt:P31/wdt:P279* ?type .
   OPTIONAL {{ ?item wdt:P2044 ?elev }}
   OPTIONAL {{ ?item schema:description ?desc . FILTER(LANG(?desc) = "en") }}
   OPTIONAL {{ ?item wdt:P18 ?image }}
@@ -120,7 +98,6 @@ LIMIT {effective_limit}
 
             for b in bindings:
                 coord_str = b.get("coord", {}).get("value", "")
-                import re
                 match = re.search(r"Point\(([^ ]+) ([^)]+)\)", coord_str)
                 if not match:
                     continue
@@ -128,9 +105,14 @@ LIMIT {effective_limit}
                 item_lng = float(match.group(1))
                 item_lat = float(match.group(2))
                 name = b.get("itemLabel", {}).get("value", "")
-                # Skip if name is just the Wikidata ID (Q123456)
+                # Skip bare Wikidata IDs (Q123456)
                 if name.startswith("Q") and name[1:].isdigit():
                     name = ""
+
+                # Resolve per-entity label when feature has multiple Wikidata classes
+                type_entity = b.get("type", {}).get("value", "")
+                type_wd = "wd:" + type_entity.split("/")[-1] if type_entity else ""
+                type_label = _ENTITY_LABELS.get(type_wd, label)
 
                 wiki_url = ""
                 article = b.get("article", {}).get("value", "")
@@ -143,17 +125,16 @@ LIMIT {effective_limit}
                 if elev:
                     try:
                         elev = str(round(float(elev))) + "m"
-                    except:
+                    except Exception:
                         elev = ""
 
                 image = b.get("image", {}).get("value", "")
-                # Convert Wikidata image to thumbnail URL
                 if image and "Special:FilePath" not in image:
                     image = f"https://commons.wikimedia.org/wiki/Special:FilePath/{image.split('/')[-1]}?width=400"
 
                 yield {
                     "name": name,
-                    "type": label,
+                    "type": type_label,
                     "type_id": fid,
                     "lat": item_lat,
                     "lng": item_lng,

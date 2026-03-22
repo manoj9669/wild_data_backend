@@ -814,6 +814,449 @@ async def fetch_india(
             print(f"[India data.gov.in] error: {e}")
 
 
+# ── Norway — Kartverket (Norwegian Mapping Authority) ─────────────────────────
+
+async def fetch_norway(
+    lat: float, lng: float, radius_km: float, feature_ids: List[str]
+) -> AsyncGenerator[Dict[str, Any], None]:
+    """
+    Norway: Kartverket SSR (Sentralt stedsnavnregister) — official Norwegian
+    place name register. Free, no key required.
+    Covers: peaks, waterfalls, lakes, glaciers, valleys, passes, caves.
+    """
+    import math
+
+    def in_radius(f_lat, f_lng):
+        dlat = math.radians(f_lat - lat)
+        dlng = math.radians(f_lng - lng)
+        a = math.sin(dlat/2)**2 + math.cos(math.radians(lat)) * math.cos(math.radians(f_lat)) * math.sin(dlng/2)**2
+        return 6371 * 2 * math.atan2(math.sqrt(a), math.sqrt(1-a)) <= radius_km
+
+    deg = radius_km / 111.0
+
+    # Kartverket SSR name type codes → WildData feature IDs
+    SSR_TYPES = {
+        "waterfall":  ["Foss", "Stryk"],
+        "peak":       ["Fjell", "Topp", "Nut", "Tind", "Horn"],
+        "waterway":   ["Innsjø", "Vatn", "Tjern", "Elv"],
+        "glacier":    ["Bre", "Isbre", "Jøkel"],
+        "cave":       ["Grotte", "Hule"],
+        "viewpoint":  ["Utsiktspunkt"],
+        "camp":       ["Camping"],
+        "hot_spring": ["Kilde"],
+    }
+
+    for fid in feature_ids:
+        search_terms = SSR_TYPES.get(fid)
+        if not search_terms:
+            continue
+
+        for term in search_terms:
+            try:
+                await rate_limiter.wait("ws.geonorge.no", 0.5)
+                async with httpx.AsyncClient(timeout=20) as client:
+                    resp = await client.get(
+                        "https://ws.geonorge.no/stedsnavn/v1/sted",
+                        params={
+                            "sok":         f"*{term}*",
+                            "utkoordsys":  4258,    # WGS84
+                            "treffPerSide": 50,
+                            "side":        0,
+                            "nord":  lat + deg,
+                            "sor":   lat - deg,
+                            "aust":  lng + deg,
+                            "vest":  lng - deg,
+                        },
+                    )
+                    if resp.status_code != 200:
+                        continue
+                    data = resp.json()
+
+                for place in data.get("navn", []):
+                    coords = (place.get("representasjonspunkt") or {})
+                    f_lat = coords.get("nord") or coords.get("lat")
+                    f_lng = coords.get("ost") or coords.get("lon")
+                    if not f_lat or not f_lng:
+                        continue
+                    try:
+                        f_lat, f_lng = float(f_lat), float(f_lng)
+                    except (TypeError, ValueError):
+                        continue
+                    if not in_radius(f_lat, f_lng):
+                        continue
+
+                    name = place.get("stedsnavn", [{}])[0].get("skrivemåte", "") if place.get("stedsnavn") else place.get("skrivemåte", "")
+                    if not name:
+                        continue
+
+                    type_label = {
+                        "waterfall": "Waterfall", "peak": "Mountain Peak",
+                        "waterway": "Lake / River", "glacier": "Glacier",
+                        "cave": "Cave", "viewpoint": "Viewpoint",
+                        "camp": "Campsite", "hot_spring": "Hot Spring",
+                    }.get(fid, "Natural Feature")
+
+                    yield {
+                        "name": name,
+                        "type": type_label,
+                        "type_id": fid,
+                        "lat": round(f_lat, 6),
+                        "lng": round(f_lng, 6),
+                        "elevation": "",
+                        "description": f"Norwegian official place name — {place.get('navneobjekttype', term)}",
+                        "wikipedia": "",
+                        "website": "https://kartverket.no",
+                        "region": (place.get("kommuner") or [{}])[0].get("kommunenavn", "") if place.get("kommuner") else "",
+                        "country": "Norway",
+                        "image": "",
+                        "osm_id": "",
+                        "source": "Kartverket SSR (Norway)",
+                        "confidence": "High",
+                    }
+
+            except Exception as e:
+                print(f"[Norway Kartverket] {fid}/{term} error: {e}")
+                continue
+
+
+# ── Canada — Parks Canada + hardcoded major parks ─────────────────────────────
+
+async def fetch_canada(
+    lat: float, lng: float, radius_km: float, feature_ids: List[str]
+) -> AsyncGenerator[Dict[str, Any], None]:
+    """
+    Canada: Parks Canada open data API + hardcoded national parks list.
+    """
+    import math
+
+    def in_radius(f_lat, f_lng):
+        dlat = math.radians(f_lat - lat)
+        dlng = math.radians(f_lng - lng)
+        a = math.sin(dlat/2)**2 + math.cos(math.radians(lat)) * math.cos(math.radians(f_lat)) * math.sin(dlng/2)**2
+        return 6371 * 2 * math.atan2(math.sqrt(a), math.sqrt(1-a)) <= radius_km
+
+    if not any(f in feature_ids for f in ("park", "hiking", "camp")):
+        return
+
+    # Parks Canada open data — heritage places dataset (CKAN API)
+    try:
+        await rate_limiter.wait("open.canada.ca", 1.0)
+        async with httpx.AsyncClient(timeout=20) as client:
+            resp = await client.get(
+                "https://open.canada.ca/data/api/3/action/datastore_search",
+                params={
+                    "resource_id": "a0f47b06-3ccc-421c-b42c-fc9c5cbd7d0d",
+                    "limit": 100,
+                },
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                for record in (data.get("result", {}).get("records", [])):
+                    try:
+                        r_lat = float(record.get("LATITUDE") or record.get("latitude") or 0)
+                        r_lng = float(record.get("LONGITUDE") or record.get("longitude") or 0)
+                    except (TypeError, ValueError):
+                        continue
+                    if r_lat == 0 or not in_radius(r_lat, r_lng):
+                        continue
+                    name = record.get("NAME_E") or record.get("name", "")
+                    if not name:
+                        continue
+                    yield {
+                        "name": name,
+                        "type": "National Park",
+                        "type_id": "park",
+                        "lat": r_lat,
+                        "lng": r_lng,
+                        "elevation": "",
+                        "description": record.get("DESCRIPTION_E", ""),
+                        "wikipedia": f"https://en.wikipedia.org/wiki/{name.replace(' ', '_')}",
+                        "website": "https://www.pc.gc.ca",
+                        "region": record.get("PROVINCE_E", ""),
+                        "country": "Canada",
+                        "image": "",
+                        "osm_id": "",
+                        "source": "Parks Canada (Open Data)",
+                        "confidence": "High",
+                    }
+    except Exception as e:
+        print(f"[Canada Parks] open data error: {e}")
+
+    # Hardcoded Canadian National Parks
+    CANADA_PARKS = [
+        {"name": "Banff National Park", "lat": 51.4968, "lng": -115.9281, "desc": "Canada's oldest national park, Rocky Mountain scenery, hot springs."},
+        {"name": "Jasper National Park", "lat": 52.8734, "lng": -117.9543, "desc": "Canada's largest Rocky Mountain park, Columbia Icefield, dark sky preserve."},
+        {"name": "Yoho National Park", "lat": 51.5, "lng": -116.5, "desc": "Dramatic waterfalls, Burgess Shale fossils, emerald lakes."},
+        {"name": "Kootenay National Park", "lat": 50.6, "lng": -116.0, "desc": "Hot springs, painted pots, canyon hikes in the Rockies."},
+        {"name": "Pacific Rim National Park Reserve", "lat": 48.99, "lng": -125.49, "desc": "Wild Pacific coastline, rainforest, surfing beaches on Vancouver Island."},
+        {"name": "Gwaii Haanas National Park Reserve", "lat": 52.5, "lng": -131.5, "desc": "Remote Haida Gwaii archipelago, ancient Haida culture, wildlife."},
+        {"name": "Gros Morne National Park", "lat": 49.5, "lng": -57.8, "desc": "UNESCO World Heritage, fiords, tablelands, and coastal wilderness."},
+        {"name": "Algonquin Provincial Park", "lat": 45.5, "lng": -78.3, "desc": "Ontario's iconic canoe country, moose, wolves, ancient forests."},
+        {"name": "Cape Breton Highlands National Park", "lat": 46.75, "lng": -60.75, "desc": "Dramatic coastal highlands, Cabot Trail, bald eagles."},
+        {"name": "Kluane National Park", "lat": 61.0, "lng": -138.5, "desc": "UNESCO World Heritage, largest non-polar icefields, Dall sheep."},
+        {"name": "Wood Buffalo National Park", "lat": 59.5, "lng": -113.0, "desc": "UNESCO World Heritage, world's largest national park, bison herds."},
+        {"name": "Nahanni National Park Reserve", "lat": 61.0, "lng": -125.0, "desc": "UNESCO World Heritage, Virginia Falls, wild canyon wilderness."},
+    ]
+    for park in CANADA_PARKS:
+        if in_radius(park["lat"], park["lng"]):
+            if any(f in feature_ids for f in ("park",)):
+                yield {
+                    "name": park["name"], "type": "National Park", "type_id": "park",
+                    "lat": park["lat"], "lng": park["lng"], "elevation": "",
+                    "description": park["desc"],
+                    "wikipedia": f"https://en.wikipedia.org/wiki/{park['name'].replace(' ', '_')}",
+                    "website": "https://www.pc.gc.ca", "region": "", "country": "Canada",
+                    "image": "", "osm_id": "", "source": "Parks Canada (Govt)", "confidence": "High",
+                }
+
+
+# ── Spain — IGN España + hardcoded protected areas ───────────────────────────
+
+async def fetch_spain(
+    lat: float, lng: float, radius_km: float, feature_ids: List[str]
+) -> AsyncGenerator[Dict[str, Any], None]:
+    """
+    Spain: IGN España IDEE WFS (geographic names) + hardcoded national parks.
+    """
+    import math
+
+    def in_radius(f_lat, f_lng):
+        dlat = math.radians(f_lat - lat)
+        dlng = math.radians(f_lng - lng)
+        a = math.sin(dlat/2)**2 + math.cos(math.radians(lat)) * math.cos(math.radians(f_lat)) * math.sin(dlng/2)**2
+        return 6371 * 2 * math.atan2(math.sqrt(a), math.sqrt(1-a)) <= radius_km
+
+    deg = radius_km / 111.0
+
+    # IGN España NGBE WFS — Named Places (Nomenclátor Geográfico Básico de España)
+    # Free, no key — official Spanish geographic names
+    if any(f in feature_ids for f in ("peak", "waterfall", "waterway", "cave", "beach")):
+        try:
+            await rate_limiter.wait("www.ign.es", 1.0)
+            async with httpx.AsyncClient(timeout=25) as client:
+                resp = await client.get(
+                    "https://www.ign.es/wfs-inspire/ngbe",
+                    params={
+                        "SERVICE":      "WFS",
+                        "VERSION":      "2.0.0",
+                        "REQUEST":      "GetFeature",
+                        "TYPENAMES":    "gn:NamedPlace",
+                        "OUTPUTFORMAT": "application/json",
+                        "BBOX":         f"{lat-deg},{lng-deg},{lat+deg},{lng+deg},urn:ogc:def:crs:EPSG::4326",
+                        "COUNT":        100,
+                    },
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    for feat in data.get("features", []):
+                        props = feat.get("properties", {})
+                        geom  = feat.get("geometry", {})
+                        if geom.get("type") == "Point":
+                            f_lng_v, f_lat_v = geom["coordinates"][:2]
+                        elif geom.get("type") == "MultiPoint":
+                            f_lng_v, f_lat_v = geom["coordinates"][0][:2]
+                        else:
+                            continue
+                        try:
+                            f_lat_v, f_lng_v = float(f_lat_v), float(f_lng_v)
+                        except (TypeError, ValueError):
+                            continue
+                        if not in_radius(f_lat_v, f_lng_v):
+                            continue
+                        name = props.get("name", "") or props.get("text", "")
+                        if not name:
+                            continue
+                        feat_type = (props.get("featureType") or props.get("placeType") or "").lower()
+                        if "peak" in feat_type or "summit" in feat_type or "mountain" in feat_type:
+                            type_label, type_id = "Mountain Peak", "peak"
+                        elif "waterfall" in feat_type or "fall" in feat_type:
+                            type_label, type_id = "Waterfall", "waterfall"
+                        elif "lake" in feat_type or "river" in feat_type or "water" in feat_type:
+                            type_label, type_id = "Lake / River", "waterway"
+                        elif "cave" in feat_type or "grotto" in feat_type:
+                            type_label, type_id = "Cave", "cave"
+                        elif "beach" in feat_type or "coast" in feat_type:
+                            type_label, type_id = "Beach", "beach"
+                        else:
+                            type_label, type_id = "Natural Feature", "viewpoint"
+
+                        if type_id not in feature_ids:
+                            continue
+
+                        yield {
+                            "name": name, "type": type_label, "type_id": type_id,
+                            "lat": round(f_lat_v, 6), "lng": round(f_lng_v, 6), "elevation": "",
+                            "description": props.get("placeType", ""),
+                            "wikipedia": "", "website": "https://www.ign.es",
+                            "region": props.get("municipality", ""), "country": "Spain",
+                            "image": "", "osm_id": "",
+                            "source": "IGN España (NGBE)", "confidence": "High",
+                        }
+                else:
+                    print(f"[Spain IGN] HTTP {resp.status_code}")
+        except Exception as e:
+            print(f"[Spain IGN] error: {e}")
+
+    # Hardcoded Spanish National Parks
+    SPAIN_PARKS = [
+        {"name": "Teide National Park", "lat": 28.2726, "lng": -16.6421, "desc": "UNESCO World Heritage, highest peak in Spain — Mount Teide volcano."},
+        {"name": "Garajonay National Park", "lat": 28.1167, "lng": -17.2333, "desc": "UNESCO World Heritage, ancient laurel forest on La Gomera."},
+        {"name": "Caldera de Taburiente National Park", "lat": 28.7167, "lng": -17.8833, "desc": "Giant volcanic crater on La Palma, deep ravines and pine forests."},
+        {"name": "Timanfaya National Park", "lat": 29.0, "lng": -13.75, "desc": "Volcanic moonscape on Lanzarote, still geothermally active."},
+        {"name": "Ordesa y Monte Perdido", "lat": 42.6333, "lng": -0.05, "desc": "Pyrenean canyon, UNESCO World Heritage, chamois and bearded vultures."},
+        {"name": "Aigüestortes i Estany de Sant Maurici", "lat": 42.5667, "lng": 1.0, "desc": "Pyrenean lakes and glacial valleys, unique twisted streams."},
+        {"name": "Sierra Nevada National Park", "lat": 37.05, "lng": -3.3167, "desc": "Highest peak in mainland Spain — Mulhacén 3479m."},
+        {"name": "Doñana National Park", "lat": 36.9333, "lng": -6.4333, "desc": "UNESCO World Heritage, critical Iberian lynx and flamingo habitat."},
+        {"name": "Sierra de Guadarrama National Park", "lat": 40.85, "lng": -3.9667, "desc": "Mountain range north of Madrid, pine forests and granite peaks."},
+        {"name": "Picos de Europa National Park", "lat": 43.2, "lng": -4.9, "desc": "Dramatic limestone massif, bears, wolves and famous gorges."},
+        {"name": "Cabañeros National Park", "lat": 39.4, "lng": -4.4, "desc": "Mediterranean scrubland, large herds of deer, imperial eagles."},
+        {"name": "Monfragüe National Park", "lat": 39.8333, "lng": -5.9, "desc": "Raptor paradise — black vultures, Spanish imperial eagles, lynx."},
+        {"name": "Tablas de Daimiel National Park", "lat": 39.1333, "lng": -3.7, "desc": "Wetland in La Mancha, migratory waterbirds."},
+        {"name": "Sierra de las Nieves National Park", "lat": 36.7, "lng": -4.95, "desc": "Newest national park, pinsapo fir forests and limestone karst."},
+    ]
+    for park in SPAIN_PARKS:
+        if in_radius(park["lat"], park["lng"]) and "park" in feature_ids:
+            yield {
+                "name": park["name"], "type": "National Park", "type_id": "park",
+                "lat": park["lat"], "lng": park["lng"], "elevation": "",
+                "description": park["desc"],
+                "wikipedia": f"https://en.wikipedia.org/wiki/{park['name'].replace(' ', '_')}",
+                "website": "https://www.miteco.gob.es/es/red-parques-nacionales/",
+                "region": "", "country": "Spain", "image": "", "osm_id": "",
+                "source": "Red de Parques Nacionales (Spain Govt)", "confidence": "High",
+            }
+
+
+# ── Brazil — ICMBio + IBGE national parks ─────────────────────────────────────
+
+async def fetch_brazil(
+    lat: float, lng: float, radius_km: float, feature_ids: List[str]
+) -> AsyncGenerator[Dict[str, Any], None]:
+    """
+    Brazil: ICMBio API (protected areas) + hardcoded major national parks.
+    """
+    import math
+
+    def in_radius(f_lat, f_lng):
+        dlat = math.radians(f_lat - lat)
+        dlng = math.radians(f_lng - lng)
+        a = math.sin(dlat/2)**2 + math.cos(math.radians(lat)) * math.cos(math.radians(f_lat)) * math.sin(dlng/2)**2
+        return 6371 * 2 * math.atan2(math.sqrt(a), math.sqrt(1-a)) <= radius_km
+
+    # ICMBio CNUC API — National Conservation Units registry
+    if any(f in feature_ids for f in ("park", "forest")):
+        try:
+            await rate_limiter.wait("sistemas.mma.gov.br", 1.0)
+            deg = radius_km / 111.0
+            async with httpx.AsyncClient(timeout=20) as client:
+                resp = await client.get(
+                    "https://sistemas.mma.gov.br/cnuc/api/v1/uc",
+                    params={
+                        "bbox": f"{lng-deg},{lat-deg},{lng+deg},{lat+deg}",
+                        "categoria": "PI",   # Parques de proteção integral
+                        "limit": 50,
+                    },
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    for area in data.get("features", data if isinstance(data, list) else []):
+                        props = (area.get("properties", {}) if isinstance(area, dict) and "properties" in area else area)
+                        geom = area.get("geometry", {}) if isinstance(area, dict) else {}
+                        if geom.get("type") == "Point":
+                            f_lng_v, f_lat_v = geom["coordinates"][:2]
+                        else:
+                            f_lat_v = props.get("latitude") or props.get("lat_centroide")
+                            f_lng_v = props.get("longitude") or props.get("lon_centroide")
+                        if not f_lat_v or not f_lng_v:
+                            continue
+                        try:
+                            f_lat_v, f_lng_v = float(f_lat_v), float(f_lng_v)
+                        except (TypeError, ValueError):
+                            continue
+                        if not in_radius(f_lat_v, f_lng_v):
+                            continue
+                        name = props.get("nome_uc") or props.get("nome", "")
+                        if not name:
+                            continue
+                        yield {
+                            "name": name, "type": "National Park", "type_id": "park",
+                            "lat": round(f_lat_v, 6), "lng": round(f_lng_v, 6), "elevation": "",
+                            "description": f"Brazilian Conservation Unit — {props.get('categoria_uc', '')}",
+                            "wikipedia": "", "website": "https://www.icmbio.gov.br",
+                            "region": props.get("uf_uc", ""), "country": "Brazil",
+                            "image": "", "osm_id": "",
+                            "source": "ICMBio / CNUC (Brazil)", "confidence": "High",
+                        }
+        except Exception as e:
+            print(f"[Brazil ICMBio] error: {e}")
+
+    BRAZIL_PARKS = [
+        {"name": "Amazon National Park", "lat": -4.5, "lng": -56.5, "desc": "Largest national park in Brazil, heart of the Amazon rainforest."},
+        {"name": "Iguaçu National Park", "lat": -25.695, "lng": -54.436, "desc": "UNESCO World Heritage, world's largest waterfall system."},
+        {"name": "Fernando de Noronha", "lat": -3.855, "lng": -32.423, "desc": "UNESCO World Heritage, pristine marine reserve and diving paradise."},
+        {"name": "Chapada Diamantina National Park", "lat": -12.5, "lng": -41.5, "desc": "Dramatic tablelands, waterfalls, caves and rivers in Bahia."},
+        {"name": "Chapada dos Veadeiros National Park", "lat": -14.0, "lng": -47.5, "desc": "UNESCO World Heritage, cerrado savanna, quartz crystal formations."},
+        {"name": "Lençóis Maranhenses National Park", "lat": -2.5, "lng": -43.0, "desc": "White sand dunes with seasonal turquoise lagoons."},
+        {"name": "Pantanal Matogrossense National Park", "lat": -17.8, "lng": -57.5, "desc": "UNESCO World Heritage, world's largest tropical wetland."},
+        {"name": "Serra da Capivara National Park", "lat": -8.5, "lng": -42.5, "desc": "UNESCO World Heritage, prehistoric rock art spanning 50,000 years."},
+        {"name": "Tijuca National Park", "lat": -22.95, "lng": -43.28, "desc": "World's largest urban forest, within Rio de Janeiro."},
+        {"name": "Jaú National Park", "lat": -2.0, "lng": -62.0, "desc": "UNESCO World Heritage, black-water rivers and flooded forest."},
+    ]
+    for park in BRAZIL_PARKS:
+        if in_radius(park["lat"], park["lng"]) and "park" in feature_ids:
+            yield {
+                "name": park["name"], "type": "National Park", "type_id": "park",
+                "lat": park["lat"], "lng": park["lng"], "elevation": "",
+                "description": park["desc"],
+                "wikipedia": f"https://en.wikipedia.org/wiki/{park['name'].replace(' ', '_')}",
+                "website": "https://www.icmbio.gov.br", "region": "", "country": "Brazil",
+                "image": "", "osm_id": "", "source": "ICMBio (Brazil Govt)", "confidence": "High",
+            }
+
+
+# ── South Africa — SANParks ───────────────────────────────────────────────────
+
+async def fetch_south_africa(
+    lat: float, lng: float, radius_km: float, feature_ids: List[str]
+) -> AsyncGenerator[Dict[str, Any], None]:
+    """
+    South Africa: SANParks national parks + SANBI protected areas.
+    """
+    import math
+
+    def in_radius(f_lat, f_lng):
+        dlat = math.radians(f_lat - lat)
+        dlng = math.radians(f_lng - lng)
+        a = math.sin(dlat/2)**2 + math.cos(math.radians(lat)) * math.cos(math.radians(f_lat)) * math.sin(dlng/2)**2
+        return 6371 * 2 * math.atan2(math.sqrt(a), math.sqrt(1-a)) <= radius_km
+
+    SA_PARKS = [
+        {"name": "Kruger National Park", "lat": -23.989, "lng": 31.554, "desc": "South Africa's flagship game reserve, Big Five wildlife."},
+        {"name": "Table Mountain National Park", "lat": -34.0, "lng": 18.4, "desc": "UNESCO World Heritage, iconic flat-topped mountain above Cape Town."},
+        {"name": "Kgalagadi Transfrontier Park", "lat": -26.0, "lng": 20.5, "desc": "Vast semi-desert, black-maned Kalahari lions and raptors."},
+        {"name": "iSimangaliso Wetland Park", "lat": -28.0, "lng": 32.5, "desc": "UNESCO World Heritage, estuary, coral reefs, hippos, crocs."},
+        {"name": "Drakensberg (uKhahlamba) Park", "lat": -29.5, "lng": 29.2, "desc": "UNESCO World Heritage, dramatic Basotho Highlands escarpment."},
+        {"name": "Garden Route National Park", "lat": -33.9, "lng": 22.6, "desc": "Forests, lakes, beaches and whales along the southern Cape coast."},
+        {"name": "Richtersveld National Park", "lat": -28.5, "lng": 17.0, "desc": "UNESCO World Heritage, desert mountain wilderness, succulent plants."},
+        {"name": "Addo Elephant National Park", "lat": -33.5, "lng": 25.75, "desc": "Dense elephant herds, Big Seven including sharks and whales."},
+        {"name": "Mapungubwe National Park", "lat": -22.2, "lng": 29.3, "desc": "UNESCO World Heritage, Iron Age kingdom ruins, baobabs, elephants."},
+        {"name": "Agulhas National Park", "lat": -34.8, "lng": 20.0, "desc": "Southernmost tip of Africa, rocky reefs, migrating whales."},
+        {"name": "Camdeboo National Park", "lat": -32.25, "lng": 24.5, "desc": "Karoo landscape, Valley of Desolation, black eagles."},
+        {"name": "Golden Gate Highlands National Park", "lat": -28.5, "lng": 28.6, "desc": "Sandstone cliffs glowing gold at sunset, bearded vultures."},
+    ]
+
+    for park in SA_PARKS:
+        if in_radius(park["lat"], park["lng"]) and any(f in feature_ids for f in ("park",)):
+            yield {
+                "name": park["name"], "type": "National Park", "type_id": "park",
+                "lat": park["lat"], "lng": park["lng"], "elevation": "",
+                "description": park["desc"],
+                "wikipedia": f"https://en.wikipedia.org/wiki/{park['name'].replace(' ', '_')}",
+                "website": "https://www.sanparks.org", "region": "", "country": "South Africa",
+                "image": "", "osm_id": "", "source": "SANParks (South Africa Govt)", "confidence": "High",
+            }
+
+
 # ── Dispatcher ────────────────────────────────────────────────────────────────
 
 # Country code → fetch function
@@ -826,6 +1269,11 @@ COUNTRY_EXTRACTORS = {
     "JP": fetch_japan,
     "IN": fetch_india,
     "GR": fetch_greece,
+    "NO": fetch_norway,
+    "CA": fetch_canada,
+    "ES": fetch_spain,
+    "BR": fetch_brazil,
+    "ZA": fetch_south_africa,
 }
 
 async def fetch_country_specific(
