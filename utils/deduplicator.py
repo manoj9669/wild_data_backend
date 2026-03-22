@@ -79,10 +79,10 @@ def name_similarity(a: str, b: str) -> float:
 # Small point features need tight matching; large area features can differ more.
 
 _COORD_RADIUS: Dict[str, float] = {
-    "waterfall":  0.30,   # 300 m — tight, it's a single point
-    "hot_spring": 0.30,
-    "cave":       0.30,
-    "viewpoint":  0.30,
+    "waterfall":  0.10,   # 100 m — tight, it's a single point
+    "hot_spring": 0.10,
+    "cave":       0.10,
+    "viewpoint":  0.10,
     "camp":       0.40,
     "beach":      0.60,
     "peak":       1.00,   # summit vs centroid can differ
