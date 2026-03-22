@@ -13,6 +13,7 @@ from extractors.waymarked import fetch_waymarked
 from extractors.protected_planet import fetch_protected_planet
 from extractors.enrichment import enrich_geocoding, enrich_elevation, geocode_place
 from extractors.countries import fetch_country_specific, COUNTRY_EXTRACTORS
+from extractors.ai_enricher import enrich_with_ai
 from utils.deduplicator import deduplicate
 
 app = FastAPI(
@@ -62,6 +63,7 @@ async def extract(
     do_enrich_wiki: bool = Query(True),
     do_enrich_elevation: bool = Query(True),
     do_enrich_geocoding: bool = Query(True),
+    do_enrich_ai: bool = Query(True),
 ):
     """
     Main extraction endpoint — returns newline-delimited JSON (NDJSON) stream.
@@ -185,6 +187,12 @@ async def extract(
                 yield json.dumps({"type": "progress", "stage": "elevation", "message": "Fetching elevation data...", "count": len(all_results)}) + "\n"
                 all_results = await enrich_elevation(all_results, max_points=150)
                 yield json.dumps({"type": "progress", "stage": "elevation", "message": "Elevation done", "count": len(all_results)}) + "\n"
+
+            # ── Stage 12: AI validation + description enrichment ───────────
+            if do_enrich_ai:
+                yield json.dumps({"type": "progress", "stage": "ai_enrich", "message": "AI validation & description enrichment (Gemini)...", "count": len(all_results)}) + "\n"
+                all_results = await enrich_with_ai(all_results, max_descriptions=50, max_validations=80)
+                yield json.dumps({"type": "progress", "stage": "ai_enrich", "message": f"AI enrichment done — {len(all_results)} features", "count": len(all_results)}) + "\n"
 
             # ── Final ──────────────────────────────────────────────────────
             yield json.dumps({"type": "final", "data": all_results}) + "\n"
