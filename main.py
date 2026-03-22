@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, JSONResponse
 
 from extractors.osm import fetch_osm
+from extractors.opentripmap import fetch_opentripmap
 from extractors.wikipedia import fetch_wikipedia_geo, enrich_wikipedia_descriptions
 from extractors.geonames import fetch_geonames
 from extractors.waymarked import fetch_waymarked
@@ -95,6 +96,19 @@ async def extract(
             if batch:
                 yield json.dumps({"type": "results", "data": batch}) + "\n"
             yield json.dumps({"type": "progress", "stage": "osm", "message": f"OSM done — {len(all_results)} features", "count": len(all_results)}) + "\n"
+
+            # ── Stage 2: OpenTripMap ───────────────────────────────────────
+            yield json.dumps({"type": "progress", "stage": "opentripmap", "message": "Querying OpenTripMap tourism database...", "count": len(all_results)}) + "\n"
+            batch = []
+            async for item in fetch_opentripmap(lat, lng, radius_km, feature_ids, limit=200):
+                all_results.append(item)
+                batch.append(item)
+                if len(batch) >= 20:
+                    yield json.dumps({"type": "results", "data": batch}) + "\n"
+                    batch = []
+            if batch:
+                yield json.dumps({"type": "results", "data": batch}) + "\n"
+            yield json.dumps({"type": "progress", "stage": "opentripmap", "message": f"OpenTripMap done — {len(all_results)} features", "count": len(all_results)}) + "\n"
 
             # ── Stage 3: Wikipedia GeoSearch ──────────────────────────────
             yield json.dumps({"type": "progress", "stage": "wikipedia", "message": "Wikipedia GeoSearch...", "count": len(all_results)}) + "\n"
