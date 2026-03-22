@@ -67,7 +67,7 @@ SELECT DISTINCT ?item ?itemLabel ?type ?coord ?elev ?desc ?image ?article WHERE 
     bd:serviceParam wikibase:radius "{radius_km}".
   }}
   VALUES ?type {{ {values_clause} }}
-  ?item wdt:P31/wdt:P279* ?type .
+  ?item wdt:P31 ?type .
   OPTIONAL {{ ?item wdt:P2044 ?elev }}
   OPTIONAL {{ ?item schema:description ?desc . FILTER(LANG(?desc) = "en") }}
   OPTIONAL {{ ?item wdt:P18 ?image }}
@@ -105,9 +105,21 @@ LIMIT {effective_limit}
                 item_lng = float(match.group(1))
                 item_lat = float(match.group(2))
                 name = b.get("itemLabel", {}).get("value", "")
+                desc = b.get("desc", {}).get("value", "").lower()
+
                 # Skip bare Wikidata IDs (Q123456)
                 if name.startswith("Q") and name[1:].isdigit():
                     name = ""
+
+                # Skip coordinate-style labels (e.g. "32.67°N 76.26°E")
+                if re.match(r"^[\d.]+[°\s]*[NS]", name):
+                    name = ""
+
+                # For waterfall queries: skip rivers and streams misclassified in Wikidata
+                if fid == "waterfall" and any(w in desc for w in (
+                    "river", "stream", "nadi", "nāla", "nala", "khad", "nāl", "rivulet", "creek", "brook"
+                )):
+                    continue
 
                 # Resolve per-entity label when feature has multiple Wikidata classes
                 type_entity = b.get("type", {}).get("value", "")
