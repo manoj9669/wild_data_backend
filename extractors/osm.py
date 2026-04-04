@@ -5,20 +5,29 @@ from utils.rate_limiter import rate_limiter
 OVERPASS_URL = "https://overpass-api.de/api/interpreter"
 
 FEATURE_TAGS = {
-    "hiking":       ('relation', '"route"="hiking"'),
-    "mtb":          ('relation', '"route"="mtb"'),
-    "motorbiking":  ('relation', '"route"="motorcycle"'),
-    "peak":         ('node', '"natural"="peak"'),
-    "park":         ('relation', '"boundary"="national_park"'),
-    "viewpoint":    ('node', '"tourism"="viewpoint"'),
-    "camp":         ('node', '"tourism"="camp_site"'),
-    "cave":         ('node', '"natural"="cave_entrance"'),
-    "hot_spring":   ('node', '"natural"="hot_spring"'),
-    "waterway":     ('node|way', '"natural"="water"'),   # lakes/ponds
-    "beach":        ('node|way', '"natural"="beach"'),
-    "glacier":      ('way', '"natural"="glacier"'),
-    "volcano":      ('node', '"natural"="volcano"'),
-    "forest":       ('relation', '"boundary"="protected_area"'),
+    "hiking":         ('relation', '"route"="hiking"'),
+    "mtb":            ('relation', '"route"="mtb"'),
+    "motorbiking":    ('relation', '"route"="motorcycle"'),
+    "peak":           ('node', '"natural"="peak"'),
+    "park":           ('relation', '"boundary"="national_park"'),
+    "viewpoint":      ('node', '"tourism"="viewpoint"'),
+    "camp":           ('node', '"tourism"="camp_site"'),
+    "cave":           ('node', '"natural"="cave_entrance"'),
+    "hot_spring":     ('node', '"natural"="hot_spring"'),
+    "waterway":       ('nwr', '"natural"="water"'),   # lakes/ponds/rivers
+    "beach":          ('nwr', '"natural"="beach"'),
+    "glacier":        ('way', '"natural"="glacier"'),
+    "volcano":        ('node', '"natural"="volcano"'),
+    "forest":         ('relation', '"boundary"="protected_area"'),
+    # ── Previously missing — these queries were skipped entirely ──
+    "historic":       ('nwr', '"historic"~"ruins|castle|fort|monument|memorial|archaeological_site|manor|palace|citadel|shrine|temple|mosque|church|city_gate|tower"'),
+    "cultural":       ('nwr', '"tourism"~"museum|gallery|arts_centre|attraction|heritage"'),
+    # ── New feature types ─────────────────────────────────────────
+    "ruins":          ('nwr', '"historic"~"ruins|castle|fort|citadel|city_gate|tower"'),
+    "wilderness_hut": ('node', '"tourism"~"wilderness_hut|alpine_hut"'),
+    "cliff":          ('way', '"natural"="cliff"'),
+    "spring":         ('node', '"natural"="spring"'),
+    "lighthouse":     ('node', '"man_made"="lighthouse"'),
 }
 
 FEATURE_LABELS = {
@@ -27,6 +36,10 @@ FEATURE_LABELS = {
     "viewpoint": "Viewpoint", "camp": "Campsite", "cave": "Cave",
     "hot_spring": "Hot Spring", "waterway": "Lake / Pond", "beach": "Beach",
     "glacier": "Glacier", "volcano": "Volcano", "forest": "Protected Forest",
+    "historic": "Historic Site", "cultural": "Cultural Site",
+    "ruins": "Ruins / Castle", "wilderness_hut": "Mountain Hut",
+    "cliff": "Cliff / Escarpment", "spring": "Natural Spring",
+    "lighthouse": "Lighthouse",
 }
 
 # Waterfall uses a union query to include natural pools & swimming areas
@@ -200,11 +213,12 @@ out tags center {limit};"""
                     "description": tags.get("description") or tags.get("description:en") or "",
                     "wikipedia": wiki_url,
                     "website": tags.get("website") or tags.get("url") or "",
-                    "region": tags.get("addr:state") or tags.get("is_in:state") or "",
+                    "city":    tags.get("addr:city") or tags.get("addr:town") or tags.get("addr:village") or "",
+                    "region":  tags.get("addr:state") or tags.get("is_in:state") or "",
                     "country": tags.get("addr:country") or tags.get("is_in:country") or "",
-                    "image": tags.get("image") or tags.get("wikimedia_commons") or "",
-                    "osm_id": f"{el.get('type','node')}/{el.get('id','')}",
-                    "source": "OSM",
+                    "image":   tags.get("image") or tags.get("wikimedia_commons") or "",
+                    "osm_id":  f"{el.get('type','node')}/{el.get('id','')}",
+                    "source":  "OSM",
                     "confidence": confidence,
                 }
 

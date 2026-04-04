@@ -19,6 +19,7 @@ from extractors.geoapify import fetch_geoapify
 from extractors.foursquare import fetch_foursquare
 from extractors.here import fetch_here
 from extractors.inaturalist import fetch_inaturalist
+from extractors.unesco import fetch_unesco
 from utils.deduplicator import deduplicate
 
 app = FastAPI(
@@ -432,12 +433,25 @@ async def extract(
                     yield json.dumps({"type": "results", "data": batch}) + "\n"
                 yield json.dumps({"type": "progress", "stage": "inaturalist", "message": f"iNaturalist done — {len(all_results)} features", "count": len(all_results)}) + "\n"
 
-            # ── Stage 12: Deduplicate ──────────────────────────────────────
+            # ── Stage 12: UNESCO World Heritage Sites (always free, no key) ─
+            yield json.dumps({"type": "progress", "stage": "unesco", "message": "Querying UNESCO World Heritage Sites...", "count": len(all_results)}) + "\n"
+            batch = []
+            async for item in fetch_unesco(lat, lng, radius_km, bbox=bbox_tuple):
+                all_results.append(item)
+                batch.append(item)
+                if len(batch) >= 20:
+                    yield json.dumps({"type": "results", "data": batch}) + "\n"
+                    batch = []
+            if batch:
+                yield json.dumps({"type": "results", "data": batch}) + "\n"
+            yield json.dumps({"type": "progress", "stage": "unesco", "message": f"UNESCO done — {len(all_results)} features", "count": len(all_results)}) + "\n"
+
+            # ── Stage 13: Deduplicate ──────────────────────────────────────
             yield json.dumps({"type": "progress", "stage": "dedup", "message": "Deduplicating results...", "count": len(all_results)}) + "\n"
             all_results = deduplicate(all_results)
             yield json.dumps({"type": "progress", "stage": "dedup", "message": f"After dedup: {len(all_results)} unique features", "count": len(all_results)}) + "\n"
 
-            # ── Stage 13: Enrich Wikipedia descriptions ────────────────────
+            # ── Stage 14: Enrich Wikipedia descriptions ────────────────────
             if do_enrich_wiki:
                 yield json.dumps({"type": "progress", "stage": "wiki_enrich", "message": "Fetching Wikipedia descriptions...", "count": len(all_results)}) + "\n"
                 all_results = await enrich_wikipedia_descriptions(all_results, max_enrichments=80)
