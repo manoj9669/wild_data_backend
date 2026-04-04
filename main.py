@@ -297,7 +297,7 @@ async def extract(
             # ── Stage 2: OpenTripMap ───────────────────────────────────────
             yield json.dumps({"type": "progress", "stage": "opentripmap", "message": "Querying OpenTripMap tourism database...", "count": len(all_results)}) + "\n"
             batch = []
-            async for item in fetch_opentripmap(lat, lng, radius_km, feature_ids, limit=200):
+            async for item in fetch_opentripmap(lat, lng, radius_km, feature_ids, limit=200, bbox=bbox_tuple):
                 all_results.append(item)
                 batch.append(item)
                 if len(batch) >= 20:

@@ -11,8 +11,9 @@ API docs: https://dev.opentripmap.org/docs
 """
 
 import os
+import math
 import httpx
-from typing import List, Dict, Any, AsyncGenerator
+from typing import List, Dict, Any, AsyncGenerator, Optional, Tuple
 from utils.rate_limiter import rate_limiter
 
 OPENTRIPMAP_API_KEY = os.getenv("OPENTRIPMAP_API_KEY", "")
@@ -93,15 +94,78 @@ async def _fetch_xid_detail(xid: str, client: httpx.AsyncClient) -> Dict[str, An
         return {}
 
 
+OTM_MAX_RADIUS_KM = 45  # OTM hard cap ~50km; use 45 to be safe
+# Max grid cells per run to protect the 5,000 req/day free tier
+MAX_GRID_CELLS = 9  # 3×3 grid covers most large states/regions
+
+
+def _grid_centers(
+    bbox: Optional[Tuple[float, float, float, float]],
+    lat: float,
+    lng: float,
+    radius_km: float,
+) -> List[Tuple[float, float, float]]:
+    """
+    Return a list of (lat, lng, radius_km) search circles that tile the area.
+    For small areas (radius ≤ OTM_MAX_RADIUS_KM) returns a single center point.
+    For large areas, builds a grid of OTM_MAX_RADIUS_KM circles capped at MAX_GRID_CELLS.
+    """
+    if radius_km <= OTM_MAX_RADIUS_KM:
+        return [(lat, lng, radius_km)]
+
+    if bbox:
+        south, west, north, east = bbox
+    else:
+        # Approximate bbox from center + radius
+        deg = radius_km / 111.0
+        south, north = lat - deg, lat + deg
+        west,  east  = lng - deg / max(math.cos(math.radians(lat)), 0.01), \
+                       lng + deg / max(math.cos(math.radians(lat)), 0.01)
+
+    # How many cells fit across each axis
+    lat_span_km = (north - south) * 111.0
+    lng_span_km = (east  - west)  * 111.0 * math.cos(math.radians((north + south) / 2))
+    cols = max(1, math.ceil(lng_span_km / (OTM_MAX_RADIUS_KM * 2)))
+    rows = max(1, math.ceil(lat_span_km / (OTM_MAX_RADIUS_KM * 2)))
+
+    # Cap total cells to protect API quota
+    while rows * cols > MAX_GRID_CELLS:
+        if rows >= cols:
+            rows -= 1
+        else:
+            cols -= 1
+    rows = max(1, rows)
+    cols = max(1, cols)
+
+    cell_lat = (north - south) / rows
+    cell_lng = (east  - west)  / cols
+    cell_r   = max(
+        math.hypot(cell_lat * 111.0 / 2, cell_lng * 111.0 * math.cos(math.radians(lat)) / 2),
+        10,
+    )
+    cell_r = min(cell_r, OTM_MAX_RADIUS_KM)
+
+    centers = []
+    for r in range(rows):
+        for c in range(cols):
+            clat = south + cell_lat * (r + 0.5)
+            clng = west  + cell_lng * (c + 0.5)
+            centers.append((clat, clng, cell_r))
+    return centers
+
+
 async def fetch_opentripmap(
     lat: float,
     lng: float,
     radius_km: float,
     feature_ids: List[str],
     limit: int = 100,
+    bbox: Optional[Tuple[float, float, float, float]] = None,
 ) -> AsyncGenerator[Dict[str, Any], None]:
     """
     Fetch tourism features from OpenTripMap for any location worldwide.
+    For large regions, tiles the area into a grid of 45km circles so the
+    entire region is covered (OTM hard-caps each query at ~50km radius).
     Queries /places/radius per feature type, then fetches detail for
     notable places (rate >= 2) to get descriptions, images, and Wikipedia links.
     """
@@ -109,7 +173,10 @@ async def fetch_opentripmap(
         print("[OpenTripMap] OPENTRIPMAP_API_KEY not set — skipping")
         return
 
-    radius_m = int(min(radius_km * 1000, 50000))  # OTM max radius = 50km
+    grid = _grid_centers(bbox, lat, lng, radius_km)
+    if len(grid) > 1:
+        print(f"[OpenTripMap] Large region — using {len(grid)}-cell grid ({len(grid)*len(feature_ids)} queries)")
+
     seen: set = set()
 
     async with httpx.AsyncClient(timeout=30) as client:
@@ -118,106 +185,108 @@ async def fetch_opentripmap(
             if not kinds:
                 continue
 
-            try:
-                await rate_limiter.wait("api.opentripmap.com", 0.25)
-                resp = await client.get(
-                    OTM_RADIUS_URL,
-                    params={
-                        "radius":  radius_m,
-                        "lon":     lng,
-                        "lat":     lat,
-                        "kinds":   kinds,
-                        "limit":   min(limit, 500),
-                        "rate":    "1",       # only rate ≥ 1 (skip completely unrated)
-                        "format":  "geojson",
-                        "apikey":  OPENTRIPMAP_API_KEY,
-                    },
-                )
-                if resp.status_code == 429:
-                    print("[OpenTripMap] Rate limit hit — stopping")
-                    return
-                if resp.status_code != 200:
-                    print(f"[OpenTripMap] HTTP {resp.status_code} for {fid}")
+            for (g_lat, g_lng, g_radius_km) in grid:
+                g_radius_m = int(g_radius_km * 1000)
+
+                try:
+                    await rate_limiter.wait("api.opentripmap.com", 0.25)
+                    resp = await client.get(
+                        OTM_RADIUS_URL,
+                        params={
+                            "radius":  g_radius_m,
+                            "lon":     g_lng,
+                            "lat":     g_lat,
+                            "kinds":   kinds,
+                            "limit":   min(limit, 500),
+                            "rate":    "1",
+                            "format":  "geojson",
+                            "apikey":  OPENTRIPMAP_API_KEY,
+                        },
+                    )
+                    if resp.status_code == 429:
+                        print("[OpenTripMap] Rate limit hit — stopping")
+                        return
+                    if resp.status_code != 200:
+                        print(f"[OpenTripMap] HTTP {resp.status_code} for {fid}")
+                        continue
+
+                    data = resp.json()
+
+                except Exception as e:
+                    print(f"[OpenTripMap] radius fetch error ({fid}): {e}")
                     continue
 
-                data = resp.json()
+                features = data.get("features", [])
+                # Sort by rate descending so we enrich the best ones first
+                features.sort(key=lambda f: f.get("properties", {}).get("rate", 0), reverse=True)
 
-            except Exception as e:
-                print(f"[OpenTripMap] radius fetch error ({fid}): {e}")
-                continue
+                detail_count = 0
+                for feat in features:
+                    props = feat.get("properties", {})
+                    xid   = props.get("xid", "")
+                    name  = props.get("name", "").strip()
 
-            features = data.get("features", [])
-            # Sort by rate descending so we enrich the best ones first
-            features.sort(key=lambda f: f.get("properties", {}).get("rate", 0), reverse=True)
+                    if not xid or xid in seen:
+                        continue
+                    seen.add(xid)
 
-            detail_count = 0
-            for feat in features:
-                props = feat.get("properties", {})
-                xid   = props.get("xid", "")
-                name  = props.get("name", "").strip()
+                    coords = feat.get("geometry", {}).get("coordinates", [])
+                    if len(coords) < 2:
+                        continue
+                    f_lng, f_lat = float(coords[0]), float(coords[1])
 
-                if not xid or xid in seen:
-                    continue
-                seen.add(xid)
+                    rate      = props.get("rate", 0)
+                    kinds_str = props.get("kinds", kinds)
+                    kind_key  = _primary_kind(kinds_str)
+                    type_label = KIND_LABELS.get(kind_key, fid.replace("_", " ").title())
+                    confidence = RATE_CONFIDENCE.get(rate, "Medium")
 
-                coords = feat.get("geometry", {}).get("coordinates", [])
-                if len(coords) < 2:
-                    continue
-                f_lng, f_lat = float(coords[0]), float(coords[1])
+                    # Fetch detail for notable places (top 40 per feature type)
+                    desc    = ""
+                    wiki    = ""
+                    image   = ""
+                    website = ""
+                    if rate >= 2 and detail_count < 40:
+                        detail = await _fetch_xid_detail(xid, client)
+                        detail_count += 1
 
-                rate     = props.get("rate", 0)
-                kinds_str = props.get("kinds", kinds)
-                kind_key  = _primary_kind(kinds_str)
-                type_label = KIND_LABELS.get(kind_key, fid.replace("_", " ").title())
-                confidence = RATE_CONFIDENCE.get(rate, "Medium")
+                        info = detail.get("info", {})
+                        desc = info.get("descr", "").strip()
+                        if not desc:
+                            desc = detail.get("wikipedia_extracts", {}).get("text", "").strip()
+                        if desc and len(desc) > 500:
+                            desc = desc[:497] + "..."
 
-                # Fetch detail for notable places (top 40 per feature type)
-                desc    = ""
-                wiki    = ""
-                image   = ""
-                website = ""
-                if rate >= 2 and detail_count < 40:
-                    detail = await _fetch_xid_detail(xid, client)
-                    detail_count += 1
+                        wiki = detail.get("wikipedia", "")
+                        if not wiki:
+                            url_info = detail.get("url", "")
+                            if "wikipedia" in url_info:
+                                wiki = url_info
 
-                    info = detail.get("info", {})
-                    desc = info.get("descr", "").strip()
-                    if not desc:
-                        desc = detail.get("wikipedia_extracts", {}).get("text", "").strip()
-                    if desc and len(desc) > 500:
-                        desc = desc[:497] + "..."
+                        preview = detail.get("preview", {})
+                        image = preview.get("source", "") if preview else ""
 
-                    wiki = detail.get("wikipedia", "")
-                    if not wiki:
-                        url_info = detail.get("url", "")
-                        if "wikipedia" in url_info:
-                            wiki = url_info
+                        # name fallback from detail
+                        if not name:
+                            name = detail.get("name", "").strip()
 
-                    preview = detail.get("preview", {})
-                    image = preview.get("source", "") if preview else ""
-
-                    addr = detail.get("address", {})
-                    # name fallback from detail
                     if not name:
-                        name = detail.get("name", "").strip()
+                        continue
 
-                if not name:
-                    continue
-
-                yield {
-                    "name":        name,
-                    "type":        type_label,
-                    "type_id":     fid,
-                    "lat":         round(f_lat, 6),
-                    "lng":         round(f_lng, 6),
-                    "elevation":   "",
-                    "description": desc,
-                    "wikipedia":   wiki,
-                    "website":     website,
-                    "region":      "",
-                    "country":     "",
-                    "image":       image,
-                    "osm_id":      props.get("osm", ""),
-                    "source":      "OpenTripMap",
-                    "confidence":  confidence,
-                }
+                    yield {
+                        "name":        name,
+                        "type":        type_label,
+                        "type_id":     fid,
+                        "lat":         round(f_lat, 6),
+                        "lng":         round(f_lng, 6),
+                        "elevation":   "",
+                        "description": desc,
+                        "wikipedia":   wiki,
+                        "website":     website,
+                        "region":      "",
+                        "country":     "",
+                        "image":       image,
+                        "osm_id":      props.get("osm", ""),
+                        "source":      "OpenTripMap",
+                        "confidence":  confidence,
+                    }
