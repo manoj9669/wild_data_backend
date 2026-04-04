@@ -75,9 +75,11 @@ def _make_filter(
     return f"circle:{lng},{lat},{radius_m}"
 
 
-def _primary_category(cats: str) -> str:
+def _primary_category(cats) -> str:
     if not cats:
         return "natural"
+    if isinstance(cats, list):
+        return cats[0] if cats else "natural"
     return cats.split(",")[0].strip()
 
 
@@ -168,7 +170,7 @@ async def fetch_geoapify(
                     if not name:
                         continue
 
-                    cat_key = _primary_category(props.get("categories", cat))
+                    cat_key = _primary_category(props.get("categories") or [cat])
                     type_label = CATEGORY_LABELS.get(cat_key, fid.replace("_", " ").title())
 
                     # Build confidence from datasource
