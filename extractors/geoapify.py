@@ -198,6 +198,7 @@ async def fetch_geoapify(
                         "description": props.get("description", ""),
                         "wikipedia":   wiki_url,
                         "website":     props.get("website", ""),
+                        "city":        props.get("city", "") or props.get("town", "") or props.get("village", ""),
                         "region":      props.get("state", "") or props.get("county", ""),
                         "country":     props.get("country", ""),
                         "image":       props.get("wiki_and_media", {}).get("image", ""),

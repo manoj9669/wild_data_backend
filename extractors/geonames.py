@@ -224,6 +224,7 @@ async def fetch_geonames(
                         "description": item.get("fcodeName", type_label),
                         "wikipedia":   f"https://en.wikipedia.org/wiki/{name.replace(' ', '_')}",
                         "website":     "",
+                        "city":        item.get("adminName3", "") or item.get("adminName2", ""),
                         "region":      item.get("adminName1", ""),
                         "country":     item.get("countryName", ""),
                         "image":       "",

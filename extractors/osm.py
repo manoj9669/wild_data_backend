@@ -125,6 +125,7 @@ async def fetch_osm(
                         "description": tags.get("description") or tags.get("description:en") or "",
                         "wikipedia": wiki_url,
                         "website": tags.get("website") or tags.get("url") or "",
+                        "city":   tags.get("addr:city") or tags.get("addr:town") or tags.get("addr:village") or "",
                         "region": tags.get("addr:state") or tags.get("is_in:state") or "",
                         "country": tags.get("addr:country") or tags.get("is_in:country") or "",
                         "image": tags.get("image") or tags.get("wikimedia_commons") or "",

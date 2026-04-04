@@ -201,6 +201,7 @@ async def fetch_here(
                     "description": item.get("description", ""),
                     "wikipedia":   "",
                     "website":     website,
+                    "city":        address.get("city", "") or address.get("town", "") or address.get("village", ""),
                     "region":      address.get("state", "") or address.get("county", ""),
                     "country":     address.get("countryName", ""),
                     "image":       "",
