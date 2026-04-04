@@ -167,10 +167,17 @@ async def enrich_wikipedia_descriptions(
             break
         if r.get("wikipedia") and not r.get("description"):
             title = r.get("wikipedia_title") or r["wikipedia"].split("/wiki/")[-1]
-            info = await fetch_wikipedia_summary(title)
-            if info.get("description"):
-                r["description"] = info["description"]
-                enriched += 1
-            if info.get("image") and not r.get("image"):
-                r["image"] = info["image"]
+            if not title:  # Skip if no valid title
+                continue
+            try:
+                info = await fetch_wikipedia_summary(title)
+                if info.get("description"):
+                    r["description"] = info["description"]
+                    enriched += 1
+                if info.get("image") and not r.get("image"):
+                    r["image"] = info["image"]
+                    enriched += 1
+            except Exception as e:
+                print(f"[Wikipedia] Error fetching summary for {title}: {e}")
+                continue
     return results

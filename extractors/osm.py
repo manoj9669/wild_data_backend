@@ -1,5 +1,5 @@
 import httpx
-from typing import List, Dict, Any, AsyncGenerator
+from typing import List, Dict, Any, AsyncGenerator, Optional, Tuple
 from utils.rate_limiter import rate_limiter
 
 OVERPASS_URL = "https://overpass-api.de/api/interpreter"
@@ -40,6 +40,16 @@ WATERFALL_QUERY_TMPL = """[out:json][timeout:{timeout}];
 );
 out tags center {limit};"""
 
+WATERFALL_QUERY_BBOX_TMPL = """[out:json][timeout:{timeout}];
+(
+  node["waterway"="waterfall"]({south},{west},{north},{east});
+  node["natural"="water"]["water"="pool"]({south},{west},{north},{east});
+  way["natural"="water"]["water"="pool"]({south},{west},{north},{east});
+  node["leisure"="swimming_area"]({south},{west},{north},{east});
+  way["leisure"="swimming_area"]({south},{west},{north},{east});
+);
+out tags center {limit};"""
+
 
 def _waterfall_type(tags: dict) -> str:
     """Determine display label from OSM tags for a waterfall union result."""
@@ -58,6 +68,7 @@ async def fetch_osm(
     radius_m: int,
     feature_ids: List[str],
     limit: int = 500,
+    bbox: Optional[Tuple[float, float, float, float]] = None,  # (south, west, north, east)
 ) -> AsyncGenerator[Dict[str, Any], None]:
     """
     Fetch features from OSM Overpass API.
@@ -69,9 +80,15 @@ async def fetch_osm(
 
         # ── Waterfall: union query for waterfalls + natural pools ────────────
         if fid == "waterfall":
-            query = WATERFALL_QUERY_TMPL.format(
-                timeout=timeout, radius=radius_m, lat=lat, lng=lng, limit=limit
-            )
+            if bbox:
+                south, west, north, east = bbox
+                query = WATERFALL_QUERY_BBOX_TMPL.format(
+                    timeout=timeout, south=south, west=west, north=north, east=east, limit=limit
+                )
+            else:
+                query = WATERFALL_QUERY_TMPL.format(
+                    timeout=timeout, radius=radius_m, lat=lat, lng=lng, limit=limit
+                )
             try:
                 await rate_limiter.wait("overpass-api.de", 1.5)
                 async with httpx.AsyncClient(timeout=90) as client:
@@ -126,9 +143,15 @@ async def fetch_osm(
         el_type, tag = FEATURE_TAGS[fid]
         label = FEATURE_LABELS.get(fid, fid)
 
+        if bbox:
+            south, west, north, east = bbox
+            filter_str = f"({south},{west},{north},{east})"
+        else:
+            filter_str = f"(around:{radius_m},{lat},{lng})"
+
         query = f"""[out:json][timeout:{timeout}];
 (
-  {el_type}[{tag}](around:{radius_m},{lat},{lng});
+  {el_type}[{tag}]{filter_str};
 );
 out tags center {limit};"""
 
