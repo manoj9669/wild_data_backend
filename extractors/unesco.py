@@ -45,7 +45,7 @@ async def fetch_unesco_sites(
         # ── Source 1: Wikidata SPARQL ──────────────────────────────────────
         sparql = f"""
 SELECT ?item ?itemLabel ?lat ?lon ?article ?image ?countryLabel WHERE {{
-  ?item wdt:P31 wd:Q9259 .
+  ?item wdt:P1435 wd:Q9259 .
   ?item p:P625 ?coord .
   ?coord psv:P625 ?coordv .
   ?coordv wikibase:geoLatitude ?lat .
