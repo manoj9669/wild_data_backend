@@ -18,11 +18,8 @@ from extractors.unesco import fetch_unesco_sites
 from extractors.enrichment import enrich_geocoding, enrich_elevation, geocode_place
 from extractors.countries import fetch_country_specific, COUNTRY_EXTRACTORS
 from extractors.ai_enricher import enrich_with_ai
-from extractors.geoapify import fetch_geoapify
-from extractors.foursquare import fetch_foursquare
 from extractors.here import fetch_here
 from extractors.inaturalist import fetch_inaturalist
-from extractors.unesco import fetch_unesco
 from utils.deduplicator import deduplicate
 
 app = FastAPI(
