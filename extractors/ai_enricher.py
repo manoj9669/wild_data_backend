@@ -40,7 +40,7 @@ TYPE_CONCEPTS = {
     "viewpoint":  ["view", "panorama", "lookout", "vista", "scenic", "overlook"],
     "park":       ["park", "reserve", "protected", "national", "wildlife", "sanctuary"],
     "forest":     ["forest", "woodland", "trees", "jungle", "rainforest", "grove"],
-    "waterway":   ["lake", "river", "stream", "water", "reservoir", "gorge"],
+    "lake":   ["lake", "river", "stream", "water", "reservoir", "gorge"],
     "camp":       ["camp", "camping", "campsite", "tent", "overnight", "lodge"],
 }
 

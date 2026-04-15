@@ -112,9 +112,11 @@ git push -u origin main
 | enrich_wiki | true | Fetch Wikipedia descriptions |
 | enrich_elevation | true | Fetch elevation data |
 | enrich_geocoding | true | Reverse geocode for region/country |
+| use_geoapify | false | Add Geoapify Places spot lookups (requires API key) |
+| use_foursquare | false | Add Foursquare Places spot lookups (requires API key) |
 
 ### Supported feature types
-waterfall, hiking, mtb, motorbiking, peak, park, viewpoint, camp, cave, hot_spring, waterway, beach, glacier, volcano, forest
+waterfall, pool, hiking, mtb, motorbiking, peak, park, viewpoint, historic, camp, hut, cave, hot_spring, lake, beach, gorge, meadow, glacier, volcano, unesco, forest_walk, monastery
 
 ---
 
@@ -126,3 +128,23 @@ waterfall, hiking, mtb, motorbiking, peak, park, viewpoint, camp, cave, hot_spri
 - **Wikipedia**: 0.5 second gap
 - **OpenTopoData**: batches 100 points per request, capped at 200 points
 - Results are deduplicated by proximity (within 100m same type = merged)
+
+## Optional API Keys (spot lookups)
+
+Set these env vars to enable extra sources:
+
+- `GEOAPIFY_API_KEY`
+- `FOURSQUARE_API_KEY`
+
+Free-tier safe mode (enabled by default):
+
+- `FREE_TIER_SAFE_MODE=1` (set to 0 to disable caps)
+- `FOURSQUARE_DAILY_CALL_LIMIT` (default 400)
+- `FOURSQUARE_MONTHLY_CALL_LIMIT` (default 9000)
+- `FOURSQUARE_MAX_PER_FEATURE` (default 20)
+- `GEOAPIFY_DAILY_CREDITS_LIMIT` (default 2000)
+- `GEOAPIFY_MAX_PER_FEATURE` (default 40)
+
+Note: Geoapify is queried only for feature types that have precise categories
+in the Places API (e.g., peaks, caves, hot springs, campsites, beaches, parks).
+Other types (waterfalls, volcanoes, trails, lakes/rivers) are left to OSM/OTM/Waymarked.

@@ -11,28 +11,36 @@ FEATURE_TAGS = {
     "peak":         ('node', '"natural"="peak"'),
     "park":         ('relation', '"boundary"="national_park"'),
     "viewpoint":    ('node', '"tourism"="viewpoint"'),
-    "camp":         ('node', '"tourism"="camp_site"'),
+    "camp":         ('node', '"tourism"="camp_site"["fee"!="yes"]'),
+    "hut":          ('node', '"tourism"="wilderness_hut"'),
     "cave":         ('node', '"natural"="cave_entrance"'),
     "hot_spring":   ('node', '"natural"="hot_spring"'),
-    "waterway":     ('node|way', '"natural"="water"'),   # lakes/ponds
+    "lake":         ('node|way', '"natural"="water"["water"="lake"]'),
     "beach":        ('node|way', '"natural"="beach"'),
     "glacier":      ('way', '"natural"="glacier"'),
     "volcano":      ('node', '"natural"="volcano"'),
-    "forest":       ('relation', '"boundary"="protected_area"'),
+    "gorge":        ('node|way', '"natural"="gorge"'),
+    "meadow":       ('way|relation', '"natural"="meadow"'),
 }
 
 FEATURE_LABELS = {
-    "waterfall": "Waterfall", "hiking": "Hiking Route", "mtb": "MTB / Cycling",
-    "motorbiking": "Motorbiking Route", "peak": "Mountain Peak", "park": "National Park",
-    "viewpoint": "Viewpoint", "camp": "Campsite", "cave": "Cave",
-    "hot_spring": "Hot Spring", "waterway": "Lake / Pond", "beach": "Beach",
-    "glacier": "Glacier", "volcano": "Volcano", "forest": "Protected Forest",
+    "waterfall": "Waterfall", "pool": "Natural Pool", "hiking": "Hike",
+    "mtb": "MTB / Cycling", "motorbiking": "Motorbiking Route", "peak": "Mountain Peak",
+    "park": "National Park", "viewpoint": "Viewpoint", "camp": "Free-Camping Site",
+    "hut": "Hut", "cave": "Cave", "hot_spring": "Hot Spring", "lake": "Lake",
+    "beach": "Beach", "gorge": "Adventure Gorge/Canyon", "meadow": "Meadow",
+    "glacier": "Glacier", "volcano": "Volcano", "historic": "Historical Site (Ruins, Fort)",
+    "unesco": "Unesco Heritage", "forest_walk": "Forest Walk", "monastery": "Old Monastery & Temple"
 }
 
-# Waterfall uses a union query to include natural pools & swimming areas
 WATERFALL_QUERY_TMPL = """[out:json][timeout:{timeout}];
 (
-  node["waterway"="waterfall"](around:{radius},{lat},{lng});
+  node["lake"="waterfall"](around:{radius},{lat},{lng});
+);
+out tags center {limit};"""
+
+POOL_QUERY_TMPL = """[out:json][timeout:{timeout}];
+(
   node["natural"="water"]["water"="pool"](around:{radius},{lat},{lng});
   way["natural"="water"]["water"="pool"](around:{radius},{lat},{lng});
   node["leisure"="swimming_area"](around:{radius},{lat},{lng});
@@ -40,16 +48,41 @@ WATERFALL_QUERY_TMPL = """[out:json][timeout:{timeout}];
 );
 out tags center {limit};"""
 
+HISTORIC_QUERY_TMPL = """[out:json][timeout:{timeout}];
+(
+  node["historic"="ruins"](around:{radius},{lat},{lng});
+  way["historic"="ruins"](around:{radius},{lat},{lng});
+  node["historic"="fort"](around:{radius},{lat},{lng});
+  way["historic"="fort"](around:{radius},{lat},{lng});
+  node["historic"="castle"](around:{radius},{lat},{lng});
+  way["historic"="castle"](around:{radius},{lat},{lng});
+);
+out tags center {limit};"""
 
-def _waterfall_type(tags: dict) -> str:
-    """Determine display label from OSM tags for a waterfall union result."""
-    if tags.get("waterway") == "waterfall":
-        return "Waterfall"
-    if tags.get("leisure") == "swimming_area":
-        return "Swimming Area"
-    if tags.get("water") == "pool":
-        return "Natural Pool"
-    return "Waterfall"
+UNESCO_QUERY_TMPL = """[out:json][timeout:{timeout}];
+(
+  node["heritage"="1"](around:{radius},{lat},{lng});
+  way["heritage"="1"](around:{radius},{lat},{lng});
+  relation["heritage"="1"](around:{radius},{lat},{lng});
+);
+out tags center {limit};"""
+
+FOREST_WALK_QUERY_TMPL = """[out:json][timeout:{timeout}];
+(
+  way["highway"="path"]["surface"="dirt"](around:{radius},{lat},{lng});
+  way["highway"="footway"]["surface"="dirt"](around:{radius},{lat},{lng});
+);
+out tags center {limit};"""
+
+MONASTERY_QUERY_TMPL = """[out:json][timeout:{timeout}];
+(
+  node["amenity"="monastery"](around:{radius},{lat},{lng});
+  way["amenity"="monastery"](around:{radius},{lat},{lng});
+  node["historic"="monastery"](around:{radius},{lat},{lng});
+  node["amenity"="place_of_worship"]["religion"="buddhist"](around:{radius},{lat},{lng});
+  node["amenity"="place_of_worship"]["religion"="hindu"](around:{radius},{lat},{lng});
+);
+out tags center {limit};"""
 
 
 async def fetch_osm(
@@ -67,9 +100,17 @@ async def fetch_osm(
 
     for fid in feature_ids:
 
-        # ── Waterfall: union query for waterfalls + natural pools ────────────
-        if fid == "waterfall":
-            query = WATERFALL_QUERY_TMPL.format(
+        # ── Union Queries ───────────────────────────────────────────────────
+        if fid in ["waterfall", "pool", "historic", "unesco", "forest_walk", "monastery"]:
+            tmpl_map = {
+                "waterfall": WATERFALL_QUERY_TMPL,
+                "pool": POOL_QUERY_TMPL,
+                "historic": HISTORIC_QUERY_TMPL,
+                "unesco": UNESCO_QUERY_TMPL,
+                "forest_walk": FOREST_WALK_QUERY_TMPL,
+                "monastery": MONASTERY_QUERY_TMPL,
+            }
+            query = tmpl_map[fid].format(
                 timeout=timeout, radius=radius_m, lat=lat, lng=lng, limit=limit
             )
             try:
@@ -100,8 +141,8 @@ async def fetch_osm(
                     confidence = "High" if (name and wiki_url) else "Medium" if name else "Low"
                     yield {
                         "name": name,
-                        "type": _waterfall_type(tags),
-                        "type_id": "waterfall",
+                        "type": FEATURE_LABELS.get(fid, fid.title()),
+                        "type_id": fid,
                         "lat": el_lat,
                         "lng": el_lng,
                         "elevation": tags.get("ele", ""),
@@ -116,7 +157,7 @@ async def fetch_osm(
                         "confidence": confidence,
                     }
             except Exception as e:
-                print(f"[OSM] waterfall error: {e}")
+                print(f"[OSM] {fid} error: {e}")
             continue
 
         # ── All other features: simple single-tag query ──────────────────────

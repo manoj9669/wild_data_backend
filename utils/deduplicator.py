@@ -88,7 +88,7 @@ _COORD_RADIUS: Dict[str, float] = {
     "peak":       1.00,   # summit vs centroid can differ
     "glacier":    1.50,
     "volcano":    1.50,
-    "waterway":   1.00,   # lake centroid shifts by source
+    "lake":   1.00,   # lake centroid shifts by source
     "park":       3.00,   # park centroid can be km away
     "forest":     3.00,
     "hiking":     1.00,
@@ -106,7 +106,7 @@ _NAME_SIM_THRESHOLD     = 0.60  # 60 % token overlap → considered same place
 _CONF_RANK = {"High": 3, "Medium": 2, "Low": 1}
 
 _SOURCE_PRIORITY = [
-    "OSM", "OpenTripMap", "GeoNames", "Wikipedia",
+    "OSM", "OpenTripMap", "Geoapify", "Foursquare", "GeoNames", "Wikipedia",
     "Protected Planet / WDPA", "Waymarked Trails",
 ]
 

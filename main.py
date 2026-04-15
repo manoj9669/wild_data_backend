@@ -10,8 +10,11 @@ from extractors.osm import fetch_osm
 from extractors.opentripmap import fetch_opentripmap
 from extractors.wikipedia import fetch_wikipedia_geo, enrich_wikipedia_descriptions
 from extractors.geonames import fetch_geonames
+from extractors.foursquare import fetch_foursquare
+from extractors.geoapify import fetch_geoapify
 from extractors.waymarked import fetch_waymarked
 from extractors.protected_planet import fetch_protected_planet
+from extractors.unesco import fetch_unesco_sites
 from extractors.enrichment import enrich_geocoding, enrich_elevation, geocode_place
 from extractors.countries import fetch_country_specific, COUNTRY_EXTRACTORS
 from extractors.ai_enricher import enrich_with_ai
@@ -65,6 +68,8 @@ async def extract(
     do_enrich_elevation: bool = Query(True),
     do_enrich_geocoding: bool = Query(True),
     do_enrich_ai: bool = Query(True),
+    use_foursquare: bool = Query(False),
+    use_geoapify: bool = Query(False),
 ):
     """
     Main extraction endpoint — returns newline-delimited JSON (NDJSON) stream.
@@ -136,7 +141,35 @@ async def extract(
                 yield json.dumps({"type": "results", "data": batch}) + "\n"
             yield json.dumps({"type": "progress", "stage": "geonames", "message": f"GeoNames done — {len(all_results)} features", "count": len(all_results)}) + "\n"
 
-            # ── Stage 5: Waymarked Trails (hiking / MTB / cycling) ─────────
+            # ── Stage 5: Geoapify (optional, spot lookups) ─────────────────
+            if use_geoapify:
+                yield json.dumps({"type": "progress", "stage": "geoapify", "message": "Querying Geoapify Places (spot lookups)...", "count": len(all_results)}) + "\n"
+                batch = []
+                async for item in fetch_geoapify(lat, lng, radius_km, feature_ids, limit=limit):
+                    all_results.append(item)
+                    batch.append(item)
+                    if len(batch) >= 20:
+                        yield json.dumps({"type": "results", "data": batch}) + "\n"
+                        batch = []
+                if batch:
+                    yield json.dumps({"type": "results", "data": batch}) + "\n"
+                yield json.dumps({"type": "progress", "stage": "geoapify", "message": f"Geoapify done — {len(all_results)} features", "count": len(all_results)}) + "\n"
+
+            # ── Stage 6: Foursquare (optional, spot lookups) ───────────────
+            if use_foursquare:
+                yield json.dumps({"type": "progress", "stage": "foursquare", "message": "Querying Foursquare Places (spot lookups)...", "count": len(all_results)}) + "\n"
+                batch = []
+                async for item in fetch_foursquare(lat, lng, radius_km, feature_ids, limit=limit):
+                    all_results.append(item)
+                    batch.append(item)
+                    if len(batch) >= 20:
+                        yield json.dumps({"type": "results", "data": batch}) + "\n"
+                        batch = []
+                if batch:
+                    yield json.dumps({"type": "results", "data": batch}) + "\n"
+                yield json.dumps({"type": "progress", "stage": "foursquare", "message": f"Foursquare done — {len(all_results)} features", "count": len(all_results)}) + "\n"
+
+            # ── Stage 7: Waymarked Trails (hiking / MTB / cycling) ─────────
             trail_features = [f for f in feature_ids if f in ("hiking", "mtb")]
             if trail_features:
                 yield json.dumps({"type": "progress", "stage": "waymarked", "message": "Querying Waymarked Trails...", "count": len(all_results)}) + "\n"
@@ -151,7 +184,7 @@ async def extract(
                     yield json.dumps({"type": "results", "data": batch}) + "\n"
                 yield json.dumps({"type": "progress", "stage": "waymarked", "message": f"Waymarked Trails done — {len(all_results)} features", "count": len(all_results)}) + "\n"
 
-            # ── Stage 6: Protected Planet (global protected areas) ─────────
+            # ── Stage 8: Protected Planet (global protected areas) ─────────
             if any(f in feature_ids for f in ("park", "forest")):
                 yield json.dumps({"type": "progress", "stage": "protected_planet", "message": "Querying Protected Planet / WDPA...", "count": len(all_results)}) + "\n"
                 batch = []
@@ -165,7 +198,7 @@ async def extract(
                     yield json.dumps({"type": "results", "data": batch}) + "\n"
                 yield json.dumps({"type": "progress", "stage": "protected_planet", "message": f"Protected Planet done — {len(all_results)} features", "count": len(all_results)}) + "\n"
 
-            # ── Stage 7: Country-specific sources ─────────────────────────
+            # ── Stage 9: Country-specific sources ─────────────────────────
             if cc and cc in COUNTRY_EXTRACTORS:
                 yield json.dumps({"type": "progress", "stage": "country", "message": f"Fetching {cc} government sources...", "count": len(all_results)}) + "\n"
                 batch = []
@@ -179,30 +212,44 @@ async def extract(
                     yield json.dumps({"type": "results", "data": batch}) + "\n"
                 yield json.dumps({"type": "progress", "stage": "country", "message": f"Country sources done — {len(all_results)} features", "count": len(all_results)}) + "\n"
 
-            # ── Stage 8: Deduplicate ───────────────────────────────────────
+            # ── Stage 10: UNESCO World Heritage Sites ───────────────────────
+            if "unesco" in feature_ids:
+                yield json.dumps({"type": "progress", "stage": "unesco", "message": "Querying UNESCO World Heritage Sites...", "count": len(all_results)}) + "\n"
+                batch = []
+                async for item in fetch_unesco_sites(lat, lng, radius_km, limit=100):
+                    all_results.append(item)
+                    batch.append(item)
+                    if len(batch) >= 20:
+                        yield json.dumps({"type": "results", "data": batch}) + "\n"
+                        batch = []
+                if batch:
+                    yield json.dumps({"type": "results", "data": batch}) + "\n"
+                yield json.dumps({"type": "progress", "stage": "unesco", "message": f"UNESCO done — {len(all_results)} features", "count": len(all_results)}) + "\n"
+
+            # ── Stage 11: Deduplicate ───────────────────────────────────────
             yield json.dumps({"type": "progress", "stage": "dedup", "message": "Deduplicating results...", "count": len(all_results)}) + "\n"
             all_results = deduplicate(all_results)
             yield json.dumps({"type": "progress", "stage": "dedup", "message": f"After dedup: {len(all_results)} unique features", "count": len(all_results)}) + "\n"
 
-            # ── Stage 9: Enrich Wikipedia descriptions ─────────────────────
+            # ── Stage 12: Enrich Wikipedia descriptions ─────────────────────
             if do_enrich_wiki:
                 yield json.dumps({"type": "progress", "stage": "wiki_enrich", "message": "Fetching Wikipedia descriptions...", "count": len(all_results)}) + "\n"
                 all_results = await enrich_wikipedia_descriptions(all_results, max_enrichments=80)
                 yield json.dumps({"type": "progress", "stage": "wiki_enrich", "message": "Wikipedia enrichment done", "count": len(all_results)}) + "\n"
 
-            # ── Stage 10: Reverse geocoding ────────────────────────────────
+            # ── Stage 13: Reverse geocoding ────────────────────────────────
             if do_enrich_geocoding:
                 yield json.dumps({"type": "progress", "stage": "geocoding", "message": "Reverse geocoding (max 40)...", "count": len(all_results)}) + "\n"
                 all_results = await enrich_geocoding(all_results, max_calls=40)
                 yield json.dumps({"type": "progress", "stage": "geocoding", "message": "Geocoding done", "count": len(all_results)}) + "\n"
 
-            # ── Stage 11: Elevation ────────────────────────────────────────
+            # ── Stage 14: Elevation ────────────────────────────────────────
             if do_enrich_elevation:
                 yield json.dumps({"type": "progress", "stage": "elevation", "message": "Fetching elevation data...", "count": len(all_results)}) + "\n"
                 all_results = await enrich_elevation(all_results, max_points=150)
                 yield json.dumps({"type": "progress", "stage": "elevation", "message": "Elevation done", "count": len(all_results)}) + "\n"
 
-            # ── Stage 12: AI validation + description enrichment ───────────
+            # ── Stage 15: AI validation + description enrichment ───────────
             if do_enrich_ai:
                 yield json.dumps({"type": "progress", "stage": "ai_enrich", "message": "AI validation & description enrichment (Gemini)...", "count": len(all_results)}) + "\n"
                 all_results = await enrich_with_ai(all_results, max_descriptions=50, max_validations=80)
@@ -235,6 +282,7 @@ async def root():
         "data_sources": [
             "OpenStreetMap (Overpass)", "GeoNames.org (global)", "Wikipedia GeoSearch",
             "Waymarked Trails", "Protected Planet / WDPA",
+            "Geoapify Places (optional)", "Foursquare Places (optional)",
             "NPS (USA)", "Parcs Nationaux (France)", "Ordnance Survey (UK)",
             "DOC (New Zealand)", "Parks Australia", "GSI (Japan)", "data.gov.in (India)",
             "Geodata.gov.gr (Greece)", "Kartverket SSR (Norway)", "Parks Canada",

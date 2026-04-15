@@ -152,9 +152,9 @@ async def fetch_france(
 
 OS_TYPE_MAP = {
     "waterfall": ("Waterfall",     "waterfall"),
-    "lake":      ("Lake",          "waterway"),
-    "loch":      ("Lake",          "waterway"),
-    "reservoir": ("Reservoir",     "waterway"),
+    "lake":      ("Lake",          "lake"),
+    "loch":      ("Lake",          "lake"),
+    "reservoir": ("Reservoir",     "lake"),
     "mountain":  ("Mountain Peak", "peak"),
     "hill":      ("Hill",          "peak"),
     "fell":      ("Hill",          "peak"),
@@ -172,7 +172,7 @@ OS_TYPE_MAP = {
     "bay":       ("Beach",         "beach"),
     "beach":     ("Beach",         "beach"),
     "nature reserve": ("Nature Reserve", "park"),
-    "river":     ("River",         "waterway"),
+    "river":     ("River",         "lake"),
 }
 
 def _os_type(local_type: str, name: str):
@@ -205,7 +205,7 @@ async def fetch_uk(
         "peak":      [("Mountain",              ["mountain","ben","beinn","carn","cairn","sgurr","stob"]),
                       ("Hill",                  ["hill","tor","knoll","law"]),
                       ("Fell",                  ["fell","pike","crag"])],
-        "waterway":  [("Lake",                  ["lake","mere","water","tarn","llyn"]),
+        "lake":  [("Lake",                  ["lake","mere","water","tarn","llyn"]),
                       ("Loch",                  ["loch","lochan"]),
                       ("Reservoir",             ["reservoir"])],
         "park":      [("National Park",         ["park","national"]),
@@ -523,14 +523,14 @@ async def fetch_norway(
     SSR_TYPES: Dict[str, List[str]] = {
         "waterfall":  ["Foss", "Stryk"],
         "peak":       ["Fjell", "Topp", "Nut", "Tind", "Horn"],
-        "waterway":   ["Innsjø", "Vatn", "Tjern", "Elv"],
+        "lake":   ["Innsjø", "Vatn", "Tjern", "Elv"],
         "glacier":    ["Bre", "Isbre"],
         "cave":       ["Grotte", "Hule"],
         "viewpoint":  ["Utsiktspunkt"],
         "hot_spring": ["Kilde"],
     }
     TYPE_LABELS = {
-        "waterfall": "Waterfall", "peak": "Mountain Peak", "waterway": "Lake / River",
+        "waterfall": "Waterfall", "peak": "Mountain Peak", "lake": "Lake",
         "glacier": "Glacier", "cave": "Cave", "viewpoint": "Viewpoint", "hot_spring": "Hot Spring",
     }
 

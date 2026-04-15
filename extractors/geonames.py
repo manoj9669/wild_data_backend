@@ -53,7 +53,7 @@ GEONAMES_FEATURE_MAP: Dict[str, List[Tuple[str, str]]] = {
         ("H", "SPNG"),   # Spring
         ("H", "SPNGS"),  # Springs
     ],
-    "waterway": [
+    "lake": [
         ("H", "LK"),     # Lake
         ("H", "LKS"),    # Lakes
         ("H", "LKRS"),   # Reservoir
@@ -99,7 +99,7 @@ GEONAMES_FEATURE_MAP: Dict[str, List[Tuple[str, str]]] = {
 
 GEONAMES_LABELS: Dict[str, str] = {
     "waterfall": "Waterfall", "peak": "Mountain Peak", "cave": "Cave",
-    "beach": "Beach", "hot_spring": "Hot Spring", "waterway": "Lake / River",
+    "beach": "Beach", "hot_spring": "Hot Spring", "lake": "Lake",
     "park": "National Park", "camp": "Campsite", "glacier": "Glacier",
     "volcano": "Volcano", "viewpoint": "Viewpoint", "forest": "Forest",
     "hiking": "Hiking Area",
