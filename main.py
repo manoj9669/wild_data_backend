@@ -213,6 +213,10 @@ async def extract(
     do_enrich_ai: bool = Query(True),
     use_foursquare: bool = Query(False),
     use_geoapify: bool = Query(False),
+    use_here: bool = Query(False),
+    use_inaturalist: bool = Query(False),
+    search_mode: str = Query(""),
+    region_bbox: str = Query(""),
 ):
     """
     Main extraction endpoint — returns newline-delimited JSON (NDJSON) stream.
@@ -233,7 +237,7 @@ async def extract(
         try:
             parts = [float(x) for x in region_bbox.split(",")]
             if len(parts) == 4:
-                bbox_tuple = (parts[0], parts[1], parts[2], parts[3])  # south,west,north,east
+                bbox_tuple = (parts[0], parts[1], parts[2], parts[3])
         except Exception:
             pass
 
