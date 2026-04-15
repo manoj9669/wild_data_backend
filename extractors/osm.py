@@ -1,5 +1,5 @@
 import httpx
-from typing import List, Dict, Any, AsyncGenerator
+from typing import List, Dict, Any, AsyncGenerator, Optional, Tuple
 from utils.rate_limiter import rate_limiter
 
 OVERPASS_URL = "https://overpass-api.de/api/interpreter"
@@ -91,6 +91,7 @@ async def fetch_osm(
     radius_m: int,
     feature_ids: List[str],
     limit: int = 500,
+    bbox: Optional[Tuple[float, float, float, float]] = None,  # (south, west, north, east)
 ) -> AsyncGenerator[Dict[str, Any], None]:
     """
     Fetch features from OSM Overpass API.
@@ -149,6 +150,7 @@ async def fetch_osm(
                         "description": tags.get("description") or tags.get("description:en") or "",
                         "wikipedia": wiki_url,
                         "website": tags.get("website") or tags.get("url") or "",
+                        "city":   tags.get("addr:city") or tags.get("addr:town") or tags.get("addr:village") or "",
                         "region": tags.get("addr:state") or tags.get("is_in:state") or "",
                         "country": tags.get("addr:country") or tags.get("is_in:country") or "",
                         "image": tags.get("image") or tags.get("wikimedia_commons") or "",
@@ -167,9 +169,15 @@ async def fetch_osm(
         el_type, tag = FEATURE_TAGS[fid]
         label = FEATURE_LABELS.get(fid, fid)
 
+        if bbox:
+            south, west, north, east = bbox
+            filter_str = f"({south},{west},{north},{east})"
+        else:
+            filter_str = f"(around:{radius_m},{lat},{lng})"
+
         query = f"""[out:json][timeout:{timeout}];
 (
-  {el_type}[{tag}](around:{radius_m},{lat},{lng});
+  {el_type}[{tag}]{filter_str};
 );
 out tags center {limit};"""
 
@@ -217,11 +225,12 @@ out tags center {limit};"""
                     "description": tags.get("description") or tags.get("description:en") or "",
                     "wikipedia": wiki_url,
                     "website": tags.get("website") or tags.get("url") or "",
-                    "region": tags.get("addr:state") or tags.get("is_in:state") or "",
+                    "city":    tags.get("addr:city") or tags.get("addr:town") or tags.get("addr:village") or "",
+                    "region":  tags.get("addr:state") or tags.get("is_in:state") or "",
                     "country": tags.get("addr:country") or tags.get("is_in:country") or "",
-                    "image": tags.get("image") or tags.get("wikimedia_commons") or "",
-                    "osm_id": f"{el.get('type','node')}/{el.get('id','')}",
-                    "source": "OSM",
+                    "image":   tags.get("image") or tags.get("wikimedia_commons") or "",
+                    "osm_id":  f"{el.get('type','node')}/{el.get('id','')}",
+                    "source":  "OSM",
                     "confidence": confidence,
                 }
 

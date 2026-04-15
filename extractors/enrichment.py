@@ -6,7 +6,7 @@ NOMINATIM_URL = "https://nominatim.openstreetmap.org/reverse"
 TOPO_URL = "https://api.opentopodata.org/v1/srtm30m"
 
 async def reverse_geocode(lat: float, lng: float) -> Dict[str, str]:
-    """Get region + country for a coordinate using Nominatim."""
+    """Get region, city + country for a coordinate using Nominatim."""
     try:
         await rate_limiter.wait("nominatim.openstreetmap.org", 1.2)
         async with httpx.AsyncClient(timeout=15) as client:
@@ -28,21 +28,26 @@ async def reverse_geocode(lat: float, lng: float) -> Dict[str, str]:
         region = (
             addr.get("state") or
             addr.get("province") or
-            addr.get("county") or
             addr.get("region") or
             ""
         )
         country = addr.get("country", "")
-        nearest = (
-            addr.get("village") or
-            addr.get("town") or
-            addr.get("city") or
-            addr.get("municipality") or
+
+        # Most specific populated place — useful for "which city/town is this near?"
+        city = (
+            addr.get("village") or        # rural: most specific
+            addr.get("town") or           # small town
+            addr.get("city") or           # city
+            addr.get("suburb") or         # suburb within a city
+            addr.get("municipality") or   # municipality
+            addr.get("county") or         # district/county fallback
             ""
         )
-        return {"region": region, "country": country, "nearest": nearest}
+        # nearest is used for auto-naming unnamed places
+        nearest = city or (addr.get("county") or "")
+        return {"region": region, "country": country, "city": city, "nearest": nearest}
     except:
-        return {"region": "", "country": "", "nearest": ""}
+        return {"region": "", "country": "", "city": "", "nearest": ""}
 
 
 async def enrich_geocoding(
@@ -71,6 +76,8 @@ async def enrich_geocoding(
             r["region"] = geo["region"]
         if geo["country"]:
             r["country"] = geo["country"]
+        if geo["city"] and not r.get("city"):
+            r["city"] = geo["city"]
 
         # Auto-generate name if still unnamed
         if not r.get("name"):
