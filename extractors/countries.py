@@ -195,87 +195,105 @@ async def fetch_uk(
         print("[UK/OS] OS_API_KEY not set — skipping. Register free at osdatahub.os.uk")
         return
 
-    deg    = radius_km / 111.0
-    bounds = f"{lng-deg},{lat-deg},{lng+deg},{lat+deg}"   # minLng,minLat,maxLng,maxLat
-    seen   = set()
+    deg  = radius_km / 111.0
+    # OS Names API bbox param: minLng,minLat,maxLng,maxLat (WGS84)
+    bbox = f"{lng-deg},{lat-deg},{lng+deg},{lat+deg}"
+    seen = set()
 
-    # (WildData feature_id → [(OS LOCAL_TYPE, [search terms])])
-    OS_QUERIES: Dict[str, list] = {
-        "waterfall": [("Waterfall",             ["waterfall","falls","force","foss","linn","spout"])],
-        "peak":      [("Mountain",              ["mountain","ben","beinn","carn","cairn","sgurr","stob"]),
-                      ("Hill",                  ["hill","tor","knoll","law"]),
-                      ("Fell",                  ["fell","pike","crag"])],
-        "lake":  [("Lake",                  ["lake","mere","water","tarn","llyn"]),
-                      ("Loch",                  ["loch","lochan"]),
-                      ("Reservoir",             ["reservoir"])],
-        "park":      [("National Park",         ["park","national"]),
-                      ("Country Park",          ["park","country"]),
-                      ("Nature Reserve",        ["reserve","nature","sanctuary"])],
-        "forest":    [("Forest Or Woodland",    ["forest","wood","woodland"])],
-        "cave":      [("Cave",                  ["cave","cavern","hole","pot"])],
-        "beach":     [("Beach",                 ["beach","sands","strand"]),
-                      ("Bay",                   ["bay","cove"])],
-        "viewpoint": [("Cliff",                 ["cliff","crag","scar","edge"])],
-        "hot_spring":[("Other Hydrological Feature", ["spring","well","spa"])],
+    # feature_id → list of OS LOCAL_TYPE values to query
+    OS_QUERIES: Dict[str, List[str]] = {
+        "waterfall":  ["Waterfall"],
+        "peak":       ["Mountain", "Hill", "Fell"],
+        "lake":       ["Lake", "Loch", "Reservoir"],
+        "park":       ["National Park", "Country Park", "Nature Reserve"],
+        "forest":     ["Forest Or Woodland"],
+        "cave":       ["Cave"],
+        "beach":      ["Beach", "Bay"],
+        "viewpoint":  ["Cliff"],
+        "hot_spring": ["Other Hydrological Feature"],
+        "gorge":      ["Valley"],
+    }
+
+    # OS LOCAL_TYPE → WildData (type_label, type_id)
+    LOCAL_TYPE_MAP: Dict[str, tuple] = {
+        "Waterfall":              ("Waterfall",     "waterfall"),
+        "Mountain":               ("Mountain Peak", "peak"),
+        "Hill":                   ("Hill",          "peak"),
+        "Fell":                   ("Hill",          "peak"),
+        "Lake":                   ("Lake",          "lake"),
+        "Loch":                   ("Lake",          "lake"),
+        "Reservoir":              ("Reservoir",     "lake"),
+        "National Park":          ("National Park", "park"),
+        "Country Park":           ("Park",          "park"),
+        "Nature Reserve":         ("Nature Reserve","park"),
+        "Forest Or Woodland":     ("Forest",        "forest"),
+        "Cave":                   ("Cave",          "cave"),
+        "Beach":                  ("Beach",         "beach"),
+        "Bay":                    ("Beach",         "beach"),
+        "Cliff":                  ("Viewpoint",     "viewpoint"),
+        "Other Hydrological Feature": ("Hot Spring", "hot_spring"),
+        "Valley":                 ("Valley",        "gorge"),
     }
 
     async with httpx.AsyncClient(timeout=30) as client:
         for fid in feature_ids:
-            if fid not in OS_QUERIES:
+            local_types = OS_QUERIES.get(fid)
+            if not local_types:
                 continue
-            for local_type, terms in OS_QUERIES[fid]:
-                for term in terms:
-                    try:
-                        await rate_limiter.wait("api.os.uk", 0.5)
-                        resp = await client.get(
-                            "https://api.os.uk/search/names/v1/find",
-                            params={
-                                "query":      term,
-                                "fq":         f'LOCAL_TYPE:"{local_type}"',
-                                "bounds":     bounds,
-                                "maxresults": 100,
-                                "key":        OS_API_KEY,
-                            },
-                        )
-                        if resp.status_code != 200:
-                            print(f"[UK/OS] {local_type}/{term} → HTTP {resp.status_code}")
-                            continue
+            for local_type in local_types:
+                try:
+                    await rate_limiter.wait("api.os.uk", 0.5)
+                    resp = await client.get(
+                        "https://api.os.uk/search/names/v1/find",
+                        params={
+                            "fq":         f"LOCAL_TYPE:{local_type}",
+                            "bbox":       bbox,
+                            "maxresults": 100,
+                            "key":        OS_API_KEY,
+                        },
+                    )
+                    if resp.status_code == 401:
+                        print("[UK/OS] Invalid API key (401) — check OS_API_KEY env var")
+                        return
+                    if resp.status_code != 200:
+                        print(f"[UK/OS] {local_type} → HTTP {resp.status_code}: {resp.text[:200]}")
+                        continue
 
-                        for feat in resp.json().get("results", []):
-                            g    = feat.get("GAZETTEER_ENTRY", {})
-                            name = g.get("NAME1") or g.get("NAME2", "")
-                            if not name or name in seen:
-                                continue
-                            try:
-                                f_lat = float(g["LAT"])
-                                f_lng = float(g["LNG"])
-                            except (KeyError, TypeError, ValueError):
-                                continue
-                            if not (49 < f_lat < 62 and -9 < f_lng < 3):
-                                continue
-                            if not _in_radius(lat, lng, f_lat, f_lng, radius_km):
-                                continue
-                            seen.add(name)
-                            type_label, type_id = _os_type(local_type, name)
-                            yield {
-                                "name":        name,
-                                "type":        type_label,
-                                "type_id":     type_id,
-                                "lat":         round(f_lat, 6),
-                                "lng":         round(f_lng, 6),
-                                "elevation":   "",
-                                "description": local_type,
-                                "wikipedia":   "",
-                                "website":     "https://osdatahub.os.uk",
-                                "region":      g.get("DISTRICT_BOROUGH") or g.get("COUNTY_UNITARY") or "",
-                                "country":     "United Kingdom",
-                                "image":       "",
-                                "osm_id":      g.get("OS_ID", ""),
-                                "source":      "Ordnance Survey (OS Names API)",
-                                "confidence":  "High",
-                            }
-                    except Exception as e:
-                        print(f"[UK/OS] {local_type}/{term} error: {e}")
+                    for feat in resp.json().get("results", []):
+                        g    = feat.get("GAZETTEER_ENTRY", {})
+                        name = g.get("NAME1") or g.get("NAME2", "")
+                        if not name or name in seen:
+                            continue
+                        try:
+                            f_lat = float(g["LAT"])
+                            f_lng = float(g["LNG"])
+                        except (KeyError, TypeError, ValueError):
+                            continue
+                        if not (49 < f_lat < 62 and -9 < f_lng < 3):
+                            continue
+                        if not _in_radius(lat, lng, f_lat, f_lng, radius_km):
+                            continue
+                        seen.add(name)
+                        type_label, type_id = LOCAL_TYPE_MAP.get(local_type, ("Natural Feature", fid))
+                        yield {
+                            "name":        name,
+                            "type":        type_label,
+                            "type_id":     type_id,
+                            "lat":         round(f_lat, 6),
+                            "lng":         round(f_lng, 6),
+                            "elevation":   "",
+                            "description": g.get("POPULATED_PLACE", "") or local_type,
+                            "wikipedia":   "",
+                            "website":     "https://osdatahub.os.uk",
+                            "region":      g.get("DISTRICT_BOROUGH") or g.get("COUNTY_UNITARY") or "",
+                            "country":     "United Kingdom",
+                            "image":       "",
+                            "osm_id":      g.get("OS_ID", ""),
+                            "source":      "Ordnance Survey (OS Names API)",
+                            "confidence":  "High",
+                        }
+                except Exception as e:
+                    print(f"[UK/OS] {local_type} error: {e}")
 
     # Hardcoded UK National Parks (guaranteed coverage)
     UK_PARKS = [
