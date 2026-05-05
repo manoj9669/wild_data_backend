@@ -462,7 +462,7 @@ async def extract(
             # ── Stage 13: Reverse geocoding ────────────────────────────────
             if do_enrich_geocoding:
                 yield json.dumps({"type": "progress", "stage": "geocoding", "message": "Reverse geocoding (max 40)...", "count": len(all_results)}) + "\n"
-                all_results = await enrich_geocoding(all_results, max_calls=40)
+                all_results = await enrich_geocoding(all_results, max_calls=200)
                 yield json.dumps({"type": "progress", "stage": "geocoding", "message": "Geocoding done", "count": len(all_results)}) + "\n"
 
             # ── Stage 14: Elevation ────────────────────────────────────────
