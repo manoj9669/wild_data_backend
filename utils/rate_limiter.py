@@ -1,12 +1,13 @@
 import asyncio
 import time
+from typing import Dict
 
 class RateLimiter:
     """Simple async rate limiter — ensures minimum gap between requests per domain."""
 
     def __init__(self):
-        self._last_call: dict[str, float] = {}
-        self._locks: dict[str, asyncio.Lock] = {}
+        self._last_call: Dict[str, float] = {}
+        self._locks: Dict[str, asyncio.Lock] = {}
 
     def _get_lock(self, domain: str) -> asyncio.Lock:
         if domain not in self._locks:

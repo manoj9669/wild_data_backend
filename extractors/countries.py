@@ -150,40 +150,6 @@ async def fetch_france(
 
 # ── UK — Ordnance Survey Names API ────────────────────────────────────────────
 
-OS_TYPE_MAP = {
-    "waterfall": ("Waterfall",     "waterfall"),
-    "lake":      ("Lake",          "lake"),
-    "loch":      ("Lake",          "lake"),
-    "reservoir": ("Reservoir",     "lake"),
-    "mountain":  ("Mountain Peak", "peak"),
-    "hill":      ("Hill",          "peak"),
-    "fell":      ("Hill",          "peak"),
-    "ben":       ("Mountain Peak", "peak"),
-    "summit":    ("Mountain Peak", "peak"),
-    "forest":    ("Forest",        "forest"),
-    "wood":      ("Forest",        "forest"),
-    "national park": ("National Park",  "park"),
-    "country park":  ("Park",           "park"),
-    "valley":    ("Valley",        "viewpoint"),
-    "glen":      ("Valley",        "viewpoint"),
-    "gorge":     ("Canyon",        "viewpoint"),
-    "cave":      ("Cave",          "cave"),
-    "cliff":     ("Viewpoint",     "viewpoint"),
-    "bay":       ("Beach",         "beach"),
-    "beach":     ("Beach",         "beach"),
-    "nature reserve": ("Nature Reserve", "park"),
-    "river":     ("River",         "lake"),
-}
-
-def _os_type(local_type: str, name: str):
-    lt = (local_type or "").lower()
-    nm = (name or "").lower()
-    for key, val in OS_TYPE_MAP.items():
-        if key in lt or key in nm:
-            return val
-    return ("Natural Feature", "viewpoint")
-
-
 async def fetch_uk(
     lat: float, lng: float, radius_km: float, feature_ids: List[str]
 ) -> AsyncGenerator[Dict[str, Any], None]:

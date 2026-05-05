@@ -20,8 +20,7 @@ from typing import List, Dict, Any, AsyncGenerator, Optional, Tuple
 from utils.rate_limiter import rate_limiter
 
 HERE_API_KEY = os.getenv("HERE_API_KEY", "")
-HERE_BROWSE_URL  = "https://browse.search.hereapi.com/v1/browse"
-HERE_DISCOVER_URL = "https://discover.search.hereapi.com/v1/discover"
+HERE_BROWSE_URL = "https://browse.search.hereapi.com/v1/browse"
 
 # Free tier: 250,000 req/month. Cap at 30 per run → safe for ~275 runs/day.
 MAX_CALLS_PER_RUN = 30

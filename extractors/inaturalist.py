@@ -202,7 +202,7 @@ async def fetch_inaturalist(
                         try:
                             f_lat_s, f_lng_s = geo.split(",")
                             f_lat, f_lng = round(float(f_lat_s), 4), round(float(f_lng_s), 4)
-                        except Exception:
+                        except (ValueError, AttributeError):
                             continue
 
                         # Group nearby observations — only 1 marker per ~500m cell
