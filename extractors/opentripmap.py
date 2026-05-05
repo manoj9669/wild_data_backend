@@ -15,6 +15,7 @@ import math
 import httpx
 from typing import List, Dict, Any, AsyncGenerator, Optional, Tuple
 from utils.rate_limiter import rate_limiter
+from utils.usage_caps import usage_caps
 
 OPENTRIPMAP_API_KEY = os.getenv("OPENTRIPMAP_API_KEY", "")
 OTM_RADIUS_URL = "https://api.opentripmap.com/0.1/en/places/radius"
@@ -81,6 +82,9 @@ def _primary_kind(kinds_str: str) -> str:
 async def _fetch_xid_detail(xid: str, client: httpx.AsyncClient) -> Dict[str, Any]:
     """Fetch full detail for a single place by its xid."""
     try:
+        allowed = await usage_caps.spend("opentripmap", cost=1)
+        if not allowed:
+            return {}
         await rate_limiter.wait("api.opentripmap.com", 0.25)
         resp = await client.get(
             f"{OTM_XID_URL}/{xid}",
@@ -189,6 +193,10 @@ async def fetch_opentripmap(
                 g_radius_m = int(g_radius_km * 1000)
 
                 try:
+                    allowed = await usage_caps.spend("opentripmap", cost=1)
+                    if not allowed:
+                        print("[OpenTripMap] Daily cap reached — stopping")
+                        return
                     await rate_limiter.wait("api.opentripmap.com", 0.25)
                     resp = await client.get(
                         OTM_RADIUS_URL,
