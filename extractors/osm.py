@@ -132,14 +132,27 @@ def _build_trail_description(tags: dict, fid: str) -> str:
     return " · ".join(parts) if parts else tags.get("description") or tags.get("description:en") or ""
 
 
+import re
+
+_LANG_RE = re.compile(r'^[a-z]{2,3}(-[a-z]{2,8})?$')  # e.g. en, fr, zh-hans
+_UNSAFE_RE = re.compile(r'[<>"\']')                    # XSS chars
+
+
 def _wiki_url(tags: dict) -> str:
     wiki_tag = tags.get("wikipedia", "")
-    if not wiki_tag:
+    if not wiki_tag or not isinstance(wiki_tag, str):
         return ""
     parts = wiki_tag.split(":", 1)
     page = parts[1] if len(parts) == 2 else parts[0]
     lang = parts[0] if len(parts) == 2 else "en"
-    return f"https://{lang}.wikipedia.org/wiki/{page.replace(' ', '_')}"
+    # Validate lang is a real language code (CWE-20)
+    if not _LANG_RE.match(lang):
+        lang = "en"
+    # Strip XSS characters from page title (CWE-79/80)
+    page = _UNSAFE_RE.sub("", page).replace(" ", "_")
+    if not page:
+        return ""
+    return f"https://{lang}.wikipedia.org/wiki/{page}"
 
 
 def _make_result(el: dict, tags: dict, fid: str, el_lat: float, el_lng: float) -> dict:
