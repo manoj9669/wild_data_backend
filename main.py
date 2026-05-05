@@ -21,7 +21,6 @@ from extractors.ai_enricher import enrich_with_ai
 from extractors.here import fetch_here
 from extractors.inaturalist import fetch_inaturalist
 from extractors.refuges import fetch_refuges
-from extractors.hikingproject import fetch_hiking_project
 from utils.deduplicator import deduplicate
 
 app = FastAPI(
