@@ -1,8 +1,9 @@
 """
 Waymarked Trails — global trail index built on OpenStreetMap data.
-Covers hiking, MTB/cycling, and horse riding trails worldwide.
-Completely free, no API key required.
+Covers hiking, MTB/cycling trails worldwide. Free, no API key required.
 https://waymarkedtrails.org
+
+Fix: by_area endpoint uses Web Mercator (EPSG:3857) bbox, NOT WGS84 lat/lng.
 """
 
 import math
@@ -10,10 +11,9 @@ import httpx
 from typing import List, Dict, Any, AsyncGenerator
 from utils.rate_limiter import rate_limiter
 
-# Base URLs for each trail category
 WAYMARKED_BASES = {
-    "hiking": "https://hiking.waymarkedtrails.org/api/v1",
-    "mtb":    "https://mtb.waymarkedtrails.org/api/v1",
+    "hiking":  "https://hiking.waymarkedtrails.org/api/v1",
+    "mtb":     "https://mtb.waymarkedtrails.org/api/v1",
     "cycling": "https://cycling.waymarkedtrails.org/api/v1",
 }
 
@@ -23,12 +23,27 @@ TRAIL_LABELS = {
     "cycling": "Cycling Route",
 }
 
+GROUP_LABELS = {
+    "INT": "International Trail",
+    "NAT": "National Trail",
+    "REG": "Regional Trail",
+    "LOC": "Local Trail",
+}
 
-def _haversine(lat1, lng1, lat2, lng2) -> float:
-    dlat = math.radians(lat2 - lat1)
-    dlng = math.radians(lng2 - lng1)
-    a = math.sin(dlat/2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlng/2)**2
-    return 6371 * 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
+
+def _to_mercator(lat: float, lng: float):
+    """Convert WGS84 lat/lng to Web Mercator (EPSG:3857) x/y."""
+    x = lng * 20037508.34 / 180
+    y = math.log(math.tan((90 + lat) * math.pi / 360)) / (math.pi / 180)
+    y = y * 20037508.34 / 180
+    return x, y
+
+
+def _from_mercator(x: float, y: float):
+    """Convert Web Mercator x/y back to WGS84 lat/lng."""
+    lng = x * 180 / 20037508.34
+    lat = math.degrees(math.atan(math.exp(y * math.pi / 20037508.34)) * 2 - math.pi / 2)
+    return lat, lng
 
 
 async def fetch_waymarked(
@@ -39,13 +54,15 @@ async def fetch_waymarked(
     limit: int = 100,
 ) -> AsyncGenerator[Dict[str, Any], None]:
     """
-    Fetch trail routes from Waymarked Trails for the given location.
-    Handles hiking, MTB, and cycling — skips others silently.
+    Fetch trail routes from Waymarked Trails.
+    Uses Web Mercator bbox as required by the by_area endpoint.
+    Works globally — Nepal, Greece, India, UK, USA, Bhutan, everywhere.
     """
     deg = radius_km / 111.0
-    bbox = f"{lng-deg},{lat-deg},{lng+deg},{lat+deg}"
+    x1, y1 = _to_mercator(lat - deg, lng - deg)
+    x2, y2 = _to_mercator(lat + deg, lng + deg)
+    mercator_bbox = f"{x1},{y1},{x2},{y2}"
 
-    # Map mtb feature to both mtb and cycling bases for better coverage
     feature_base_map: List[tuple] = []
     if "hiking" in feature_ids:
         feature_base_map.append(("hiking", WAYMARKED_BASES["hiking"]))
@@ -61,7 +78,7 @@ async def fetch_waymarked(
                 resp = await client.get(
                     f"{base_url}/list/by_area",
                     params={
-                        "bbox":   bbox,
+                        "bbox":   mercator_bbox,
                         "locale": "en",
                         "limit":  min(limit, 100),
                     },
@@ -72,55 +89,50 @@ async def fetch_waymarked(
                     continue
                 data = resp.json()
 
-            routes = data.get("results", data.get("routes", []))
-            for route in routes:
-                # Waymarked returns a bounding box per route; use its centre as location
+            for route in data.get("results", []):
+                osm_id = route.get("id", "")
+                name = route.get("name", "") or route.get("ref", "")
+                if not name:
+                    continue
+
+                # bbox is in Mercator — convert center back to WGS84
                 r_bbox = route.get("bbox")
-                if r_bbox:
-                    # bbox format: [minLng, minLat, maxLng, maxLat]
-                    try:
-                        r_lng = (r_bbox[0] + r_bbox[2]) / 2
-                        r_lat = (r_bbox[1] + r_bbox[3]) / 2
-                    except (TypeError, IndexError):
-                        continue
+                if r_bbox and len(r_bbox) == 4:
+                    cx = (r_bbox[0] + r_bbox[2]) / 2
+                    cy = (r_bbox[1] + r_bbox[3]) / 2
+                    r_lat, r_lng = _from_mercator(cx, cy)
                 else:
                     r_lat = route.get("lat", 0)
                     r_lng = route.get("lon", route.get("lng", 0))
 
                 if not r_lat or not r_lng:
                     continue
-                if _haversine(lat, lng, float(r_lat), float(r_lng)) > radius_km:
-                    continue
 
-                name = route.get("name", "") or route.get("ref", "")
-                if not name:
-                    continue
+                group = route.get("group", "")
+                trail_type = GROUP_LABELS.get(group, label)
 
-                osm_id = route.get("id", "")
-                length_km = route.get("length", 0)
-                desc = ""
-                if length_km:
-                    try:
-                        desc = f"{round(float(length_km), 1)} km trail"
-                    except Exception:
-                        pass
+                official_length = route.get("official_length", "")
+                desc = f"{official_length} km" if official_length else ""
+
+                base_domain = base_url.split("/api")[0]
+                website = f"{base_domain}/#route?id={osm_id}" if osm_id else base_domain
 
                 yield {
-                    "name": name,
-                    "type": label,
-                    "type_id": fid,
-                    "lat": round(float(r_lat), 6),
-                    "lng": round(float(r_lng), 6),
-                    "elevation": "",
+                    "name":        name,
+                    "type":        trail_type,
+                    "type_id":     fid,
+                    "lat":         round(r_lat, 6),
+                    "lng":         round(r_lng, 6),
+                    "elevation":   "",
                     "description": desc,
-                    "wikipedia": "",
-                    "website": f"https://hiking.waymarkedtrails.org/#route?id={osm_id}" if fid == "hiking" else f"https://mtb.waymarkedtrails.org/#route?id={osm_id}",
-                    "region": "",
-                    "country": "",
-                    "image": "",
-                    "osm_id": f"relation/{osm_id}" if osm_id else "",
-                    "source": "Waymarked Trails",
-                    "confidence": "High",
+                    "wikipedia":   "",
+                    "website":     website,
+                    "region":      "",
+                    "country":     "",
+                    "image":       "",
+                    "osm_id":      f"relation/{osm_id}" if osm_id else "",
+                    "source":      "Waymarked Trails",
+                    "confidence":  "High",
                 }
 
         except Exception as e:
