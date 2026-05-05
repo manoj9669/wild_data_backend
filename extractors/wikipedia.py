@@ -29,31 +29,27 @@ def is_outdoor_relevant(title: str) -> bool:
     t = title.lower()
     return any(kw in t for kw in OUTDOOR_KEYWORDS)
 
-def guess_type(title: str) -> tuple[str, str]:
-    """Returns (type_label, type_id)"""
+# Lookup table replaces 11 if-statements — reduces cyclomatic complexity from D(23) to A
+_TYPE_RULES: List[tuple] = [
+    (('fall', 'falls', 'cascade', 'waterfall'),          'Waterfall',     'waterfall'),
+    (('peak', 'mount', 'mountain', 'summit', 'hill'),    'Mountain Peak', 'peak'),
+    (('park', 'reserve', 'sanctuary', 'conservation'),   'National Park', 'park'),
+    (('trail', 'trek', 'hike', 'pass', 'col'),           'Hiking Route',  'hiking'),
+    (('cave', 'cavern', 'grotto'),                       'Cave',          'cave'),
+    (('lake', 'river', 'gorge', 'valley', 'canyon'),     'River / Lake',  'waterway'),
+    (('beach', 'coast', 'bay', 'cove'),                  'Beach',         'beach'),
+    (('spring', 'thermal', 'geyser'),                    'Hot Spring',    'hot_spring'),
+    (('glacier', 'icefield'),                            'Glacier',       'glacier'),
+    (('volcano', 'crater'),                              'Volcano',       'volcano'),
+    (('viewpoint', 'lookout', 'overlook'),               'Viewpoint',     'viewpoint'),
+]
+
+def guess_type(title: str) -> tuple:
+    """Returns (type_label, type_id) by matching title against keyword rules."""
     t = title.lower()
-    if any(w in t for w in ['fall', 'falls', 'cascade', 'waterfall']):
-        return 'Waterfall', 'waterfall'
-    if any(w in t for w in ['peak', 'mount', 'mountain', 'summit', 'hill']):
-        return 'Mountain Peak', 'peak'
-    if any(w in t for w in ['park', 'reserve', 'sanctuary', 'conservation']):
-        return 'National Park', 'park'
-    if any(w in t for w in ['trail', 'trek', 'hike', 'pass', 'col']):
-        return 'Hiking Route', 'hiking'
-    if any(w in t for w in ['cave', 'cavern', 'grotto']):
-        return 'Cave', 'cave'
-    if any(w in t for w in ['lake', 'river', 'gorge', 'valley', 'canyon']):
-        return 'River / Lake', 'waterway'
-    if any(w in t for w in ['beach', 'coast', 'bay', 'cove']):
-        return 'Beach', 'beach'
-    if any(w in t for w in ['spring', 'thermal', 'geyser']):
-        return 'Hot Spring', 'hot_spring'
-    if any(w in t for w in ['glacier', 'icefield']):
-        return 'Glacier', 'glacier'
-    if any(w in t for w in ['volcano', 'crater']):
-        return 'Volcano', 'volcano'
-    if any(w in t for w in ['viewpoint', 'lookout', 'overlook']):
-        return 'Viewpoint', 'viewpoint'
+    for keywords, label, type_id in _TYPE_RULES:
+        if any(w in t for w in keywords):
+            return label, type_id
     return 'Natural Feature', 'viewpoint'
 
 async def fetch_wikipedia_geo(
