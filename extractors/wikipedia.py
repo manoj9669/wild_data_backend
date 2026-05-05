@@ -150,7 +150,7 @@ async def fetch_wikipedia_summary(title: str) -> Dict[str, str]:
                 "description": data.get("extract", "")[:500],
                 "image": (data.get("thumbnail") or {}).get("source", ""),
             }
-    except Exception:
+    except (httpx.RequestError, httpx.HTTPStatusError, ValueError, KeyError):
         return {}
 
 async def enrich_wikipedia_descriptions(

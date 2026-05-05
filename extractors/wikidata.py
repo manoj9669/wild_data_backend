@@ -137,7 +137,7 @@ LIMIT {effective_limit}
                 if elev:
                     try:
                         elev = str(round(float(elev))) + "m"
-                    except Exception:
+                    except (ValueError, TypeError):
                         elev = ""
 
                 image = b.get("image", {}).get("value", "")

@@ -239,7 +239,7 @@ async def extract(
             parts = [float(x) for x in region_bbox.split(",")]
             if len(parts) == 4:
                 bbox_tuple = (parts[0], parts[1], parts[2], parts[3])
-        except Exception:
+        except (ValueError, AttributeError):
             pass
 
     # Region-based bounds calculation - use exact boundaries instead of radius

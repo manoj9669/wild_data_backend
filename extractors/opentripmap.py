@@ -94,7 +94,7 @@ async def _fetch_xid_detail(xid: str, client: httpx.AsyncClient) -> Dict[str, An
         if resp.status_code != 200:
             return {}
         return resp.json()
-    except Exception:
+    except (httpx.RequestError, httpx.HTTPStatusError, ValueError, KeyError):
         return {}
 
 

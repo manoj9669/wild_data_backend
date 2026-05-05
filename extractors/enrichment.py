@@ -46,7 +46,7 @@ async def reverse_geocode(lat: float, lng: float) -> Dict[str, str]:
         # nearest is used for auto-naming unnamed places
         nearest = city or (addr.get("county") or "")
         return {"region": region, "country": country, "city": city, "nearest": nearest}
-    except Exception:
+    except (httpx.RequestError, httpx.HTTPStatusError, ValueError, KeyError):
         return {"region": "", "country": "", "city": "", "nearest": ""}
 
 
@@ -156,5 +156,5 @@ async def geocode_place(place_name: str) -> Dict[str, Any]:
             )
             resp.raise_for_status()
             return resp.json()
-    except Exception:
+    except (httpx.RequestError, httpx.HTTPStatusError, ValueError):
         return []

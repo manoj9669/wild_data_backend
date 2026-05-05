@@ -267,8 +267,8 @@ async def fetch_greece(
                             "source":      "geodata.gov.gr",
                             "confidence":  "High",
                         }
-            except Exception:
-                pass
+            except (httpx.RequestError, httpx.HTTPStatusError, ValueError, KeyError) as e:
+                print(f"[Greece geodata] parks error: {e}")
 
         # ── 4. Greek Ministry of Environment — national parks list ─────────
         # These 10 national parks are hardcoded as they are stable official data

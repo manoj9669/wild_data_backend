@@ -17,7 +17,7 @@ def _utc_month() -> str:
 def _int_env(name: str, default: int) -> int:
     try:
         return int(os.getenv(name, default))
-    except Exception:
+    except (ValueError, TypeError):
         return default
 
 
@@ -75,7 +75,7 @@ class UsageCaps:
         try:
             if self.path.exists():
                 return json.loads(self.path.read_text() or "{}")
-        except Exception:
+        except (OSError, ValueError):
             pass
         return {}
 
@@ -83,7 +83,7 @@ class UsageCaps:
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             self.path.write_text(json.dumps(data))
-        except Exception:
+        except (OSError, IOError):
             # Best effort — never crash the pipeline for a stats write
             pass
 
