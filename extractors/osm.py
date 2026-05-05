@@ -11,7 +11,7 @@ FEATURE_TAGS = {
     "peak":         ('node', '"natural"="peak"'),
     "park":         ('relation', '"boundary"="national_park"'),
     "viewpoint":    ('node', '"tourism"="viewpoint"'),
-    "camp":         ('node', '"tourism"="camp_site"["fee"!="yes"]'),
+    "camp":         ('node|way', '"tourism"="camp_site"'),
     "hut":          ('node', '"tourism"="wilderness_hut"'),
     "cave":         ('node', '"natural"="cave_entrance"'),
     "hot_spring":   ('node', '"natural"="hot_spring"'),
@@ -35,7 +35,9 @@ FEATURE_LABELS = {
 
 WATERFALL_QUERY_TMPL = """[out:json][timeout:{timeout}];
 (
-  node["lake"="waterfall"](around:{radius},{lat},{lng});
+  node["natural"="waterfall"](around:{radius},{lat},{lng});
+  way["natural"="waterfall"](around:{radius},{lat},{lng});
+  node["waterway"="waterfall"](around:{radius},{lat},{lng});
 );
 out tags center {limit};"""
 

@@ -20,6 +20,8 @@ from extractors.countries import fetch_country_specific, COUNTRY_EXTRACTORS
 from extractors.ai_enricher import enrich_with_ai
 from extractors.here import fetch_here
 from extractors.inaturalist import fetch_inaturalist
+from extractors.refuges import fetch_refuges
+from extractors.hikingproject import fetch_hiking_project
 from utils.deduplicator import deduplicate
 
 app = FastAPI(
@@ -419,7 +421,35 @@ async def extract(
                     yield json.dumps({"type": "results", "data": batch}) + "\n"
                 yield json.dumps({"type": "progress", "stage": "unesco", "message": f"UNESCO done — {len(all_results)} features", "count": len(all_results)}) + "\n"
 
-            # ── Stage 11: Deduplicate ───────────────────────────────────────
+            # ── Stage 11: Refuges.info (mountain huts) ───────────────────
+            if any(f in feature_ids for f in ("hut", "camp")):
+                yield json.dumps({"type": "progress", "stage": "refuges", "message": "Querying Refuges.info mountain huts...", "count": len(all_results)}) + "\n"
+                batch = []
+                async for item in fetch_refuges(lat, lng, radius_km, feature_ids):
+                    all_results.append(item)
+                    batch.append(item)
+                    if len(batch) >= 20:
+                        yield json.dumps({"type": "results", "data": batch}) + "\n"
+                        batch = []
+                if batch:
+                    yield json.dumps({"type": "results", "data": batch}) + "\n"
+                yield json.dumps({"type": "progress", "stage": "refuges", "message": f"Refuges.info done — {len(all_results)} features", "count": len(all_results)}) + "\n"
+
+            # ── Stage 12: Hiking Project (US trails) ────────────────────────
+            if any(f in feature_ids for f in ("hiking", "mtb")):
+                yield json.dumps({"type": "progress", "stage": "hikingproject", "message": "Querying Hiking Project (US trails)...", "count": len(all_results)}) + "\n"
+                batch = []
+                async for item in fetch_hiking_project(lat, lng, radius_km, feature_ids, limit=limit):
+                    all_results.append(item)
+                    batch.append(item)
+                    if len(batch) >= 20:
+                        yield json.dumps({"type": "results", "data": batch}) + "\n"
+                        batch = []
+                if batch:
+                    yield json.dumps({"type": "results", "data": batch}) + "\n"
+                yield json.dumps({"type": "progress", "stage": "hikingproject", "message": f"Hiking Project done — {len(all_results)} features", "count": len(all_results)}) + "\n"
+
+            # ── Stage 13: Deduplicate ───────────────────────────────────────
             yield json.dumps({"type": "progress", "stage": "dedup", "message": "Deduplicating results...", "count": len(all_results)}) + "\n"
             all_results = deduplicate(all_results)
             yield json.dumps({"type": "progress", "stage": "dedup", "message": f"After dedup: {len(all_results)} unique features", "count": len(all_results)}) + "\n"
