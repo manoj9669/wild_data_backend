@@ -243,14 +243,16 @@ async def fetch_uk(
             for local_type in local_types:
                 try:
                     await rate_limiter.wait("api.os.uk", 0.5)
+                    fq_value = f'LOCAL_TYPE:"{local_type}"' if " " in local_type else f"LOCAL_TYPE:{local_type}"
                     resp = await client.get(
                         "https://api.os.uk/search/names/v1/find",
                         params={
-                            "fq":         f"LOCAL_TYPE:{local_type}" if " " not in local_type else f'LOCAL_TYPE:"{local_type}"',
+                            "fq":         fq_value,
                             "bbox":       bbox,
                             "maxresults": 100,
                             "key":        OS_API_KEY,
                         },
+                        headers={"User-Agent": "WildDataExtractor/1.0"},
                     )
                     if resp.status_code == 401:
                         print("[UK/OS] Invalid API key (401) — check OS_API_KEY env var")
