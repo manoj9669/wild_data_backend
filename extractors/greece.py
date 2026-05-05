@@ -298,7 +298,7 @@ async def fetch_greece(
                         "country":     "Greece",
                         "description": park["desc"],
                         "wikipedia":   f"https://en.wikipedia.org/wiki/{park['name'].replace(' ', '_')}",
-                        "website":     "http://www.minenv.gr",
+                        "website":     "https://www.minenv.gr",
                         "image":       "",
                         "osm_id":      "",
                         "source":      "Greek Ministry of Environment",

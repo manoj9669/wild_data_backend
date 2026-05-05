@@ -22,8 +22,8 @@ from typing import List, Dict, Any, AsyncGenerator, Tuple
 from utils.rate_limiter import rate_limiter
 
 GEONAMES_USERNAME = os.getenv("GEONAMES_USERNAME", "demo")
-GEONAMES_SEARCH_URL = "http://api.geonames.org/searchJSON"
-GEONAMES_NEARBY_URL = "http://api.geonames.org/findNearbyJSON"
+GEONAMES_SEARCH_URL = "https://api.geonames.org/searchJSON"
+GEONAMES_NEARBY_URL = "https://api.geonames.org/findNearbyJSON"
 
 # GeoNames feature class + code(s) per WildData feature ID
 # Multiple codes per feature = multiple API calls for comprehensive coverage.
