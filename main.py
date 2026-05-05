@@ -433,12 +433,11 @@ async def extract(
                 if batch:
                     yield json.dumps({"type": "results", "data": batch}) + "\n"
                 yield json.dumps({"type": "progress", "stage": "refuges", "message": f"Refuges.info done — {len(all_results)} features", "count": len(all_results)}) + "\n"
-
-            # ── Stage 12: Hiking Project (US trails) ────────────────────────
-            if any(f in feature_ids for f in ("hiking", "mtb")):
-                yield json.dumps({"type": "progress", "stage": "hikingproject", "message": "Querying Hiking Project (US trails)...", "count": len(all_results)}) + "\n"
+            # ── Stage 12: HERE Places (optional) ───────────────────────────────────────────
+            if use_here:
+                yield json.dumps({"type": "progress", "stage": "here", "message": "Querying HERE Places...", "count": len(all_results)}) + "\n"
                 batch = []
-                async for item in fetch_hiking_project(lat, lng, radius_km, feature_ids, limit=limit):
+                async for item in fetch_here(lat, lng, radius_km, feature_ids, limit=limit, bbox=bbox_tuple):
                     all_results.append(item)
                     batch.append(item)
                     if len(batch) >= 20:
@@ -446,32 +445,46 @@ async def extract(
                         batch = []
                 if batch:
                     yield json.dumps({"type": "results", "data": batch}) + "\n"
-                yield json.dumps({"type": "progress", "stage": "hikingproject", "message": f"Hiking Project done — {len(all_results)} features", "count": len(all_results)}) + "\n"
+                yield json.dumps({"type": "progress", "stage": "here", "message": f"HERE done — {len(all_results)} features", "count": len(all_results)}) + "\n"
 
-            # ── Stage 13: Deduplicate ───────────────────────────────────────
+            # ── Stage 13: iNaturalist (wildlife & nature areas) ───────────────────────────────────────────
+            if use_inaturalist:
+                yield json.dumps({"type": "progress", "stage": "inaturalist", "message": "Querying iNaturalist nature areas...", "count": len(all_results)}) + "\n"
+                batch = []
+                async for item in fetch_inaturalist(lat, lng, radius_km, feature_ids, limit=limit, bbox=bbox_tuple):
+                    all_results.append(item)
+                    batch.append(item)
+                    if len(batch) >= 20:
+                        yield json.dumps({"type": "results", "data": batch}) + "\n"
+                        batch = []
+                if batch:
+                    yield json.dumps({"type": "results", "data": batch}) + "\n"
+                yield json.dumps({"type": "progress", "stage": "inaturalist", "message": f"iNaturalist done — {len(all_results)} features", "count": len(all_results)}) + "\n"
+
+            # ── Stage 14: Deduplicate ───────────────────────────────────────
             yield json.dumps({"type": "progress", "stage": "dedup", "message": "Deduplicating results...", "count": len(all_results)}) + "\n"
             all_results = deduplicate(all_results)
             yield json.dumps({"type": "progress", "stage": "dedup", "message": f"After dedup: {len(all_results)} unique features", "count": len(all_results)}) + "\n"
 
-            # ── Stage 12: Enrich Wikipedia descriptions ─────────────────────
+            # ── Stage 15: Enrich Wikipedia descriptions ─────────────────────
             if do_enrich_wiki:
                 yield json.dumps({"type": "progress", "stage": "wiki_enrich", "message": "Fetching Wikipedia descriptions...", "count": len(all_results)}) + "\n"
                 all_results = await enrich_wikipedia_descriptions(all_results, max_enrichments=80)
                 yield json.dumps({"type": "progress", "stage": "wiki_enrich", "message": "Wikipedia enrichment done", "count": len(all_results)}) + "\n"
 
-            # ── Stage 13: Reverse geocoding ────────────────────────────────
+            # ── Stage 16: Reverse geocoding ────────────────────────────────
             if do_enrich_geocoding:
                 yield json.dumps({"type": "progress", "stage": "geocoding", "message": "Reverse geocoding (max 40)...", "count": len(all_results)}) + "\n"
-                all_results = await enrich_geocoding(all_results, max_calls=200)
+                all_results = await enrich_geocoding(all_results, max_calls=100)
                 yield json.dumps({"type": "progress", "stage": "geocoding", "message": "Geocoding done", "count": len(all_results)}) + "\n"
 
-            # ── Stage 14: Elevation ────────────────────────────────────────
+            # ── Stage 17: Elevation ────────────────────────────────────────
             if do_enrich_elevation:
                 yield json.dumps({"type": "progress", "stage": "elevation", "message": "Fetching elevation data...", "count": len(all_results)}) + "\n"
                 all_results = await enrich_elevation(all_results, max_points=150)
                 yield json.dumps({"type": "progress", "stage": "elevation", "message": "Elevation done", "count": len(all_results)}) + "\n"
 
-            # ── Stage 15: AI validation + description enrichment ───────────
+            # ── Stage 18: AI validation + description enrichment ───────────
             if do_enrich_ai:
                 yield json.dumps({"type": "progress", "stage": "ai_enrich", "message": "AI validation & description enrichment (Gemini)...", "count": len(all_results)}) + "\n"
                 all_results = await enrich_with_ai(all_results, max_descriptions=50, max_validations=80)
