@@ -68,7 +68,7 @@ async def _fetch_geodata_resource(resource_url: str, client: httpx.AsyncClient) 
         if isinstance(data, dict) and data.get("type") == "FeatureCollection":
             return data.get("features", [])
         return []
-    except Exception:
+    except (httpx.RequestError, httpx.HTTPStatusError, ValueError, KeyError):
         return []
 
 
@@ -91,7 +91,7 @@ async def _fetch_geodata_search(query: str, client: httpx.AsyncClient) -> List[D
                 if fmt in ("GEOJSON", "JSON") and res.get("url"):
                     resources.append(res["url"])
         return resources
-    except Exception:
+    except (httpx.RequestError, httpx.HTTPStatusError, ValueError, KeyError):
         return []
 
 
@@ -160,8 +160,8 @@ async def _fetch_natura2000(lat: float, lng: float, radius_km: float, client: ht
                     "source":      "Natura2000/EEA",
                     "confidence":  "High",
                 })
-    except Exception:
-        pass
+    except (httpx.RequestError, httpx.HTTPStatusError, KeyError, ValueError) as e:
+        print(f"[Natura2000] fetch error: {e}")
 
     return results
 
@@ -226,8 +226,8 @@ async def fetch_greece(
                             "source":      "geodata.gov.gr",
                             "confidence":  "High",
                         }
-            except Exception:
-                pass
+            except (httpx.RequestError, httpx.HTTPStatusError, ValueError, KeyError) as e:
+                print(f"[Greece geodata] error: {e}")
 
         # ── 3. geodata.gov.gr — national parks / protected areas ───────────
         if not feature_ids or any(f in feature_ids for f in ("national_park", "nature_reserve", "park")):
