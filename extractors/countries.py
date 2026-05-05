@@ -246,7 +246,7 @@ async def fetch_uk(
                     resp = await client.get(
                         "https://api.os.uk/search/names/v1/find",
                         params={
-                            "fq":         f"LOCAL_TYPE:{local_type}",
+                            "fq":         f"LOCAL_TYPE:{local_type}" if " " not in local_type else f'LOCAL_TYPE:"{local_type}"',
                             "bbox":       bbox,
                             "maxresults": 100,
                             "key":        OS_API_KEY,
