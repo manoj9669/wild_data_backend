@@ -1,9 +1,10 @@
 import httpx
-from typing import List, Dict, Any, AsyncGenerator
+from typing import List, Dict, Any, AsyncGenerator, Optional, Tuple
 from utils.rate_limiter import rate_limiter
 
 WIKI_API = "https://en.wikipedia.org/w/api.php"
 WIKI_SUMMARY = "https://en.wikipedia.org/api/rest_v1/page/summary"
+DEFAULT_USER_AGENT = "WildData/1.0 (gowild.co.in)"
 
 OUTDOOR_KEYWORDS = [
     'fall', 'falls', 'cascade', 'waterfall',
@@ -56,10 +57,12 @@ async def fetch_wikipedia_geo(
     lat: float,
     lng: float,
     radius_m: int,
+    bbox: Optional[Tuple[float, float, float, float]] = None,
 ) -> AsyncGenerator[Dict[str, Any], None]:
     """
-    Wikipedia GeoSearch — finds Wikipedia articles near coordinates.
+    Wikipedia GeoSearch — finds Wikipedia articles near coordinates or within bbox.
     Max radius per call is 10000m. For larger areas, does multiple offset calls.
+    Strictly filters results within the bbox if provided.
     """
     # Wikipedia max radius is 10km per call
     max_radius = min(radius_m, 10000)
@@ -80,7 +83,7 @@ async def fetch_wikipedia_geo(
     for dlat, dlng in offsets:
         try:
             await rate_limiter.wait("en.wikipedia.org", 0.5)
-            async with httpx.AsyncClient(timeout=30) as client:
+            async with httpx.AsyncClient(timeout=30, headers={"User-Agent": DEFAULT_USER_AGENT, "Accept": "application/json"}) as client:
                 resp = await client.get(WIKI_API, params={
                     "action": "query",
                     "list": "geosearch",
@@ -103,6 +106,15 @@ async def fetch_wikipedia_geo(
 
                 if not is_outdoor_relevant(title):
                     continue
+                
+                p_lat = page.get("lat", 0)
+                p_lng = page.get("lon", 0)
+                
+                # Strict BBOX filtering
+                if bbox:
+                    s, w, n, e = bbox
+                    if not (s <= p_lat <= n and w <= p_lng <= e):
+                        continue
 
                 type_label, type_id = guess_type(title)
                 wiki_url = f"https://en.wikipedia.org/wiki/{title.replace(' ', '_')}"
@@ -111,8 +123,8 @@ async def fetch_wikipedia_geo(
                     "name": title,
                     "type": type_label,
                     "type_id": type_id,
-                    "lat": page.get("lat", 0),
-                    "lng": page.get("lon", 0),
+                    "lat": p_lat,
+                    "lng": p_lng,
                     "elevation": "",
                     "description": "",  # fetched separately in enrichment
                     "wikipedia": wiki_url,
@@ -134,17 +146,16 @@ async def fetch_wikipedia_summary(title: str) -> Dict[str, str]:
     """Fetch summary + image for a Wikipedia article title."""
     try:
         await rate_limiter.wait("en.wikipedia.org", 0.3)
-        async with httpx.AsyncClient(timeout=15) as client:
+        async with httpx.AsyncClient(timeout=15, headers={"User-Agent": DEFAULT_USER_AGENT, "Accept": "application/json"}) as client:
             resp = await client.get(
                 f"{WIKI_SUMMARY}/{title.replace(' ', '_')}",
-                headers={"User-Agent": "WildDataExtractor/1.0 (gowild.co.in)"},
             )
             if resp.status_code != 200:
                 return {}
             data = resp.json()
             return {
                 "description": data.get("extract", "")[:500],
-                "image": (data.get("thumbnail") or {}).get("source", ""),
+                "image": data.get("thumbnail", {}).get("source", ""),
             }
     except (httpx.RequestError, httpx.HTTPStatusError, ValueError, KeyError):
         return {}

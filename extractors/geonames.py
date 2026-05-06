@@ -22,8 +22,9 @@ from typing import List, Dict, Any, AsyncGenerator, Tuple
 from utils.rate_limiter import rate_limiter
 
 GEONAMES_USERNAME = os.getenv("GEONAMES_USERNAME", "demo")
-GEONAMES_SEARCH_URL = "https://api.geonames.org/searchJSON"
-GEONAMES_NEARBY_URL = "https://api.geonames.org/findNearbyJSON"
+GEONAMES_SEARCH_URL = "http://api.geonames.org/searchJSON"
+GEONAMES_NEARBY_URL = "http://api.geonames.org/findNearbyJSON"
+DEFAULT_USER_AGENT = "WildData/1.0 (gowild.co.in)"
 
 # GeoNames feature class + code(s) per WildData feature ID
 # Multiple codes per feature = multiple API calls for comprehensive coverage.
@@ -176,7 +177,7 @@ async def fetch_geonames(
 
             try:
                 await rate_limiter.wait("api.geonames.org", 1.0)
-                async with httpx.AsyncClient(timeout=30) as client:
+                async with httpx.AsyncClient(timeout=30, headers={"User-Agent": DEFAULT_USER_AGENT, "Accept": "application/json"}) as client:
                     resp = await client.get(GEONAMES_SEARCH_URL, params=params)
                     if resp.status_code != 200:
                         print(f"[GeoNames] HTTP {resp.status_code} for {fid}/{fc_code}")

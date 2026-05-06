@@ -3,6 +3,7 @@ from typing import List, Dict, Any, AsyncGenerator, Optional, Tuple
 from utils.rate_limiter import rate_limiter
 
 OVERPASS_URL = "https://overpass-api.de/api/interpreter"
+DEFAULT_USER_AGENT = "WildData/1.0 (gowild.co.in)"
 
 SAC_SCALE_LABELS = {
     "hiking":                    "Easy (T1)",
@@ -49,68 +50,68 @@ FEATURE_LABELS = {
 
 WATERFALL_QUERY_TMPL = """[out:json][timeout:{timeout}];
 (
-  node["natural"="waterfall"](around:{radius},{lat},{lng});
-  way["natural"="waterfall"](around:{radius},{lat},{lng});
-  node["waterway"="waterfall"](around:{radius},{lat},{lng});
+  node["natural"="waterfall"]{filter};
+  way["natural"="waterfall"]{filter};
+  node["waterway"="waterfall"]{filter};
 );
 out tags center {limit};"""
 
 POOL_QUERY_TMPL = """[out:json][timeout:{timeout}];
 (
-  node["natural"="water"]["water"="pool"](around:{radius},{lat},{lng});
-  way["natural"="water"]["water"="pool"](around:{radius},{lat},{lng});
-  node["leisure"="swimming_area"](around:{radius},{lat},{lng});
-  way["leisure"="swimming_area"](around:{radius},{lat},{lng});
+  node["natural"="water"]["water"="pool"]{filter};
+  way["natural"="water"]["water"="pool"]{filter};
+  node["leisure"="swimming_area"]{filter};
+  way["leisure"="swimming_area"]{filter};
 );
 out tags center {limit};"""
 
 HISTORIC_QUERY_TMPL = """[out:json][timeout:{timeout}];
 (
-  node["historic"="ruins"](around:{radius},{lat},{lng});
-  way["historic"="ruins"](around:{radius},{lat},{lng});
-  node["historic"="fort"](around:{radius},{lat},{lng});
-  way["historic"="fort"](around:{radius},{lat},{lng});
-  node["historic"="castle"](around:{radius},{lat},{lng});
-  way["historic"="castle"](around:{radius},{lat},{lng});
+  node["historic"="ruins"]{filter};
+  way["historic"="ruins"]{filter};
+  node["historic"="fort"]{filter};
+  way["historic"="fort"]{filter};
+  node["historic"="castle"]{filter};
+  way["historic"="castle"]{filter};
 );
 out tags center {limit};"""
 
 UNESCO_QUERY_TMPL = """[out:json][timeout:{timeout}];
 (
-  node["heritage"="1"](around:{radius},{lat},{lng});
-  way["heritage"="1"](around:{radius},{lat},{lng});
-  relation["heritage"="1"](around:{radius},{lat},{lng});
+  node["heritage"="1"]{filter};
+  way["heritage"="1"]{filter};
+  relation["heritage"="1"]{filter};
 );
 out tags center {limit};"""
 
 FOREST_WALK_QUERY_TMPL = """[out:json][timeout:{timeout}];
 (
-  way["highway"="path"]["surface"="dirt"](around:{radius},{lat},{lng});
-  way["highway"="footway"]["surface"="dirt"](around:{radius},{lat},{lng});
+  way["highway"="path"]["surface"="dirt"]{filter};
+  way["highway"="footway"]["surface"="dirt"]{filter};
 );
 out tags center {limit};"""
 
 MONASTERY_QUERY_TMPL = """[out:json][timeout:{timeout}];
 (
-  node["amenity"="monastery"](around:{radius},{lat},{lng});
-  way["amenity"="monastery"](around:{radius},{lat},{lng});
-  node["historic"="monastery"](around:{radius},{lat},{lng});
-  node["amenity"="place_of_worship"]["religion"="buddhist"](around:{radius},{lat},{lng});
-  node["amenity"="place_of_worship"]["religion"="hindu"](around:{radius},{lat},{lng});
+  node["amenity"="monastery"]{filter};
+  way["amenity"="monastery"]{filter};
+  node["historic"="monastery"]{filter};
+  node["amenity"="place_of_worship"]["religion"="buddhist"]{filter};
+  node["amenity"="place_of_worship"]["religion"="hindu"]{filter};
 );
 out tags center {limit};"""
 
 HIKING_QUERY_TMPL = """[out:json][timeout:{timeout}];
 (
-  relation["route"="hiking"](around:{radius},{lat},{lng});
-  relation["route"="foot"](around:{radius},{lat},{lng});
+  relation["route"="hiking"]{filter};
+  relation["route"="foot"]{filter};
 );
 out tags center {limit};"""
 
 MTB_QUERY_TMPL = """[out:json][timeout:{timeout}];
 (
-  relation["route"="mtb"](around:{radius},{lat},{lng});
-  relation["route"="bicycle"](around:{radius},{lat},{lng});
+  relation["route"="mtb"]{filter};
+  relation["route"="bicycle"]{filter};
 );
 out tags center {limit};"""
 
@@ -204,14 +205,16 @@ async def fetch_osm(
 
     for fid in feature_ids:
 
+        filter_str = f"({bbox[0]},{bbox[1]},{bbox[2]},{bbox[3]})" if bbox else f"(around:{radius_m},{lat},{lng})"
+
         # ── Template queries (union / multi-tag) ───────────────────────────
         if fid in UNION_QUERIES:
             query = UNION_QUERIES[fid].format(
-                timeout=timeout, radius=radius_m, lat=lat, lng=lng, limit=limit
+                timeout=timeout, filter=filter_str, limit=limit
             )
             try:
                 await rate_limiter.wait("overpass-api.de", 1.5)
-                async with httpx.AsyncClient(timeout=90) as client:
+                async with httpx.AsyncClient(timeout=90, headers={"User-Agent": DEFAULT_USER_AGENT}) as client:
                     resp = await client.post(
                         OVERPASS_URL,
                         data={"data": query},
@@ -247,7 +250,7 @@ out tags center {limit};"""
 
         try:
             await rate_limiter.wait("overpass-api.de", 1.5)
-            async with httpx.AsyncClient(timeout=90) as client:
+            async with httpx.AsyncClient(timeout=90, headers={"User-Agent": DEFAULT_USER_AGENT}) as client:
                 resp = await client.post(
                     OVERPASS_URL,
                     data={"data": query},

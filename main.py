@@ -115,35 +115,44 @@ async def extract(
                               "message": "Fetching from all sources in parallel...", "count": 0}) + "\n"
 
             # ── Parallel fetch all data sources ───────────────────────────
-            tasks = [
-                _collect(fetch_osm(lat, lng, int(radius_km * 1000), feature_ids, osm_limit, bbox=bbox_tuple)),
-                _collect(fetch_opentripmap(lat, lng, radius_km, feature_ids, limit=200, bbox=bbox_tuple)),
-                _collect(fetch_wikipedia_geo(lat, lng, int(radius_km * 1000))),
-                _collect(fetch_geonames(lat, lng, radius_km, feature_ids, country_code=cc, limit=100)),
-                _collect(fetch_waymarked(lat, lng, radius_km, trail_features, limit=100)) if trail_features else _empty(),
-                _collect(fetch_protected_planet(lat, lng, radius_km, feature_ids, country_code=cc)) if any(f in feature_ids for f in ("park", "forest")) else _empty(),
-                _collect(fetch_country_specific(cc, lat, lng, radius_km, feature_ids)) if cc and cc in COUNTRY_EXTRACTORS else _empty(),
-                _collect(fetch_unesco_sites(lat, lng, radius_km, limit=100)) if "unesco" in feature_ids else _empty(),
-                _collect(fetch_refuges(lat, lng, radius_km, feature_ids)) if any(f in feature_ids for f in ("hut", "camp")) else _empty(),
-                _collect(fetch_geoapify(lat, lng, radius_km, feature_ids, limit=limit)) if use_geoapify else _empty(),
-                _collect(fetch_foursquare(lat, lng, radius_km, feature_ids, limit=limit)) if use_foursquare else _empty(),
-                _collect(fetch_here(lat, lng, radius_km, feature_ids, limit=limit, bbox=bbox_tuple)) if use_here else _empty(),
-                _collect(fetch_inaturalist(lat, lng, radius_km, feature_ids, limit=limit, bbox=bbox_tuple)) if use_inaturalist else _empty(),
+            tasks_info = [
+                ("OSM", fetch_osm(lat, lng, int(radius_km * 1000), feature_ids, osm_limit, bbox=bbox_tuple)),
+                ("OpenTripMap", fetch_opentripmap(lat, lng, radius_km, feature_ids, limit=200, bbox=bbox_tuple)),
+                ("Wikipedia", fetch_wikipedia_geo(lat, lng, int(radius_km * 1000), bbox=bbox_tuple)),
+                ("GeoNames", fetch_geonames(lat, lng, radius_km, feature_ids, country_code=cc, limit=100)),
+                ("Waymarked", fetch_waymarked(lat, lng, radius_km, trail_features, limit=100) if trail_features else _empty()),
+                ("Protected Planet", fetch_protected_planet(lat, lng, radius_km, feature_ids, country_code=cc) if any(f in feature_ids for f in ("park", "forest")) else _empty()),
+                ("Country", fetch_country_specific(cc, lat, lng, radius_km, feature_ids) if cc and cc in COUNTRY_EXTRACTORS else _empty()),
+                ("UNESCO", fetch_unesco_sites(lat, lng, radius_km, limit=100) if "unesco" in feature_ids else _empty()),
+                ("Refuges", fetch_refuges(lat, lng, radius_km, feature_ids) if any(f in feature_ids for f in ("hut", "camp")) else _empty()),
+                ("Geoapify", fetch_geoapify(lat, lng, radius_km, feature_ids, limit=limit) if use_geoapify else _empty()),
+                ("Foursquare", fetch_foursquare(lat, lng, radius_km, feature_ids, limit=limit) if use_foursquare else _empty()),
+                ("HERE", fetch_here(lat, lng, radius_km, feature_ids, limit=limit, bbox=bbox_tuple) if use_here else _empty()),
+                ("iNaturalist", fetch_inaturalist(lat, lng, radius_km, feature_ids, limit=limit, bbox=bbox_tuple) if use_inaturalist else _empty()),
             ]
 
-            results_list = await asyncio.gather(*tasks, return_exceptions=True)
+            async def run_and_stream(name, gen):
+                res_list = []
+                try:
+                    if hasattr(gen, "__aiter__"):
+                        async for item in gen:
+                            res_list.append(item)
+                    else:
+                        # For _empty() which returns a list
+                        res_list = await gen
+                except Exception as e:
+                    print(f"[{name}] error: {e}")
+                return name, res_list
 
-            stage_names = ["OSM", "OpenTripMap", "Wikipedia", "GeoNames", "Waymarked",
-                           "Protected Planet", "Country", "UNESCO", "Refuges",
-                           "Geoapify", "Foursquare", "HERE", "iNaturalist"]
+            tasks = [run_and_stream(name, gen) for name, gen in tasks_info]
 
-            for name, res in zip(stage_names, results_list):
-                if isinstance(res, Exception):
-                    print(f"[{name}] error: {res}")
-                    continue
-                if isinstance(res, list) and res:
+            for coro in asyncio.as_completed(tasks):
+                name, res = await coro
+                if res:
                     all_results.extend(res)
-                    yield json.dumps({"type": "results", "data": res}) + "\n"
+                    yield json.dumps({"type": "results", "data": res, "stage": name.lower()}) + "\n"
+                    # Small sleep to allow frontend to process
+                    await asyncio.sleep(0.01)
 
             yield json.dumps({"type": "progress", "stage": "fetching",
                               "message": f"All sources done — {len(all_results)} raw features",
