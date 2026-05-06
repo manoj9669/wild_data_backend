@@ -57,12 +57,13 @@ async def fetch_wikipedia_geo(
     lat: float,
     lng: float,
     radius_m: int,
+    feature_ids: List[str],
     bbox: Optional[Tuple[float, float, float, float]] = None,
 ) -> AsyncGenerator[Dict[str, Any], None]:
     """
     Wikipedia GeoSearch — finds Wikipedia articles near coordinates or within bbox.
     Max radius per call is 10000m. For larger areas, does multiple offset calls.
-    Strictly filters results within the bbox if provided.
+    Strictly filters results within the bbox and requested feature_ids.
     """
     # Wikipedia max radius is 10km per call
     max_radius = min(radius_m, 10000)
@@ -117,6 +118,11 @@ async def fetch_wikipedia_geo(
                         continue
 
                 type_label, type_id = guess_type(title)
+                
+                # Filter by requested features
+                if type_id not in feature_ids and 'viewpoint' not in feature_ids:
+                    continue
+
                 wiki_url = f"https://en.wikipedia.org/wiki/{title.replace(' ', '_')}"
 
                 yield {

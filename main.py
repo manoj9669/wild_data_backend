@@ -118,7 +118,7 @@ async def extract(
             tasks_info = [
                 ("OSM", fetch_osm(lat, lng, int(radius_km * 1000), feature_ids, osm_limit, bbox=bbox_tuple)),
                 ("OpenTripMap", fetch_opentripmap(lat, lng, radius_km, feature_ids, limit=200, bbox=bbox_tuple)),
-                ("Wikipedia", fetch_wikipedia_geo(lat, lng, int(radius_km * 1000), bbox=bbox_tuple)),
+                ("Wikipedia", fetch_wikipedia_geo(lat, lng, int(radius_km * 1000), feature_ids, bbox=bbox_tuple)),
                 ("GeoNames", fetch_geonames(lat, lng, radius_km, feature_ids, country_code=cc, limit=100)),
                 ("Waymarked", fetch_waymarked(lat, lng, radius_km, trail_features, limit=100) if trail_features else _empty()),
                 ("Protected Planet", fetch_protected_planet(lat, lng, radius_km, feature_ids, country_code=cc) if any(f in feature_ids for f in ("park", "forest")) else _empty()),
