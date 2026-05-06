@@ -220,30 +220,8 @@ async def enrich_with_ai(
 
     BATCH_SIZE = 10  # Keep prompts short for reliability
 
-    # ── Step 1: Validate classifications ──────────────────────────────────────
-    if validate and max_validations > 0:
-        # Only validate features with suspiciously misclassifiable types
-        validate_candidates = [
-            (i, r) for i, r in enumerate(results)
-            if r.get("type_id") in ("waterfall", "peak", "cave", "hot_spring")
-            and r.get("name")
-        ][:max_validations]
-
-        kept_indices = set(range(len(results)))
-
-        for batch_start in range(0, len(validate_candidates), BATCH_SIZE):
-            batch = validate_candidates[batch_start:batch_start + BATCH_SIZE]
-            indices = [i for i, _ in batch]
-            features = [f for _, f in batch]
-
-            is_valid = await _validate_batch(features)
-
-            for idx, valid in zip(indices, is_valid):
-                if not valid:
-                    kept_indices.discard(idx)
-                    print(f"[Gemini] Filtered misclassified: {results[idx].get('name')} ({results[idx].get('type')})")
-
-        results = [r for i, r in enumerate(results) if i in kept_indices]
+    # ── Step 1: Validation disabled — was incorrectly removing valid results
+    # Description generation only
 
     # ── Step 2: Generate descriptions ─────────────────────────────────────────
     describe_candidates = [
