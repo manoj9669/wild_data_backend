@@ -74,7 +74,7 @@ def _type_from_here_categories(here_cats: List[Dict]) -> str:
 
 def _confidence(contacts: Dict, categories: List) -> str:
     has_web = bool(contacts.get("www") or contacts.get("phone"))
-    has_cat = len(categories) > 0
+    has_cat = bool(categories)
     if has_web and has_cat:
         return "High"
     if has_cat:

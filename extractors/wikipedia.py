@@ -162,7 +162,7 @@ async def enrich_wikipedia_descriptions(
         if enriched >= max_enrichments:
             break
         if r.get("wikipedia") and not r.get("description"):
-            title = r.get("wikipedia_title") or r["wikipedia"].split("/wiki/")[-1]
+            title = r.get("wikipedia_title") or r.get("wikipedia", "").split("/wiki/")[-1]
             if not title:  # Skip if no valid title
                 continue
             try:

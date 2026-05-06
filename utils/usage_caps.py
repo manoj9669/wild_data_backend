@@ -131,4 +131,8 @@ class UsageCaps:
             return True
 
 
-usage_caps = UsageCaps(os.getenv("USAGE_CAPS_PATH", "/tmp/wilddata_usage_caps.json"))
+_caps_path = os.getenv("USAGE_CAPS_PATH", "/tmp/wilddata_usage_caps.json")
+# CWE-22: sanitize path - only allow /tmp/ directory for security
+if not os.path.abspath(_caps_path).startswith("/tmp/"):
+    _caps_path = "/tmp/wilddata_usage_caps.json"
+usage_caps = UsageCaps(_caps_path)
