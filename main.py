@@ -59,6 +59,11 @@ async def _collect(gen) -> List[dict]:
     return results
 
 
+async def _empty() -> List[dict]:
+    """Return empty list — used as no-op placeholder in gather."""
+    return []
+
+
 @app.get("/search")
 async def search_place(q: str = Query(..., min_length=2)):
     results = await geocode_place(q)
@@ -115,15 +120,15 @@ async def extract(
                 _collect(fetch_opentripmap(lat, lng, radius_km, feature_ids, limit=200, bbox=bbox_tuple)),
                 _collect(fetch_wikipedia_geo(lat, lng, int(radius_km * 1000))),
                 _collect(fetch_geonames(lat, lng, radius_km, feature_ids, country_code=cc, limit=100)),
-                _collect(fetch_waymarked(lat, lng, radius_km, trail_features, limit=100)) if trail_features else asyncio.coroutine(lambda: [])(),
-                _collect(fetch_protected_planet(lat, lng, radius_km, feature_ids, country_code=cc)) if any(f in feature_ids for f in ("park", "forest")) else asyncio.coroutine(lambda: [])(),
-                _collect(fetch_country_specific(cc, lat, lng, radius_km, feature_ids)) if cc and cc in COUNTRY_EXTRACTORS else asyncio.coroutine(lambda: [])(),
-                _collect(fetch_unesco_sites(lat, lng, radius_km, limit=100)) if "unesco" in feature_ids else asyncio.coroutine(lambda: [])(),
-                _collect(fetch_refuges(lat, lng, radius_km, feature_ids)) if any(f in feature_ids for f in ("hut", "camp")) else asyncio.coroutine(lambda: [])(),
-                _collect(fetch_geoapify(lat, lng, radius_km, feature_ids, limit=limit)) if use_geoapify else asyncio.coroutine(lambda: [])(),
-                _collect(fetch_foursquare(lat, lng, radius_km, feature_ids, limit=limit)) if use_foursquare else asyncio.coroutine(lambda: [])(),
-                _collect(fetch_here(lat, lng, radius_km, feature_ids, limit=limit, bbox=bbox_tuple)) if use_here else asyncio.coroutine(lambda: [])(),
-                _collect(fetch_inaturalist(lat, lng, radius_km, feature_ids, limit=limit, bbox=bbox_tuple)) if use_inaturalist else asyncio.coroutine(lambda: [])(),
+                _collect(fetch_waymarked(lat, lng, radius_km, trail_features, limit=100)) if trail_features else _empty(),
+                _collect(fetch_protected_planet(lat, lng, radius_km, feature_ids, country_code=cc)) if any(f in feature_ids for f in ("park", "forest")) else _empty(),
+                _collect(fetch_country_specific(cc, lat, lng, radius_km, feature_ids)) if cc and cc in COUNTRY_EXTRACTORS else _empty(),
+                _collect(fetch_unesco_sites(lat, lng, radius_km, limit=100)) if "unesco" in feature_ids else _empty(),
+                _collect(fetch_refuges(lat, lng, radius_km, feature_ids)) if any(f in feature_ids for f in ("hut", "camp")) else _empty(),
+                _collect(fetch_geoapify(lat, lng, radius_km, feature_ids, limit=limit)) if use_geoapify else _empty(),
+                _collect(fetch_foursquare(lat, lng, radius_km, feature_ids, limit=limit)) if use_foursquare else _empty(),
+                _collect(fetch_here(lat, lng, radius_km, feature_ids, limit=limit, bbox=bbox_tuple)) if use_here else _empty(),
+                _collect(fetch_inaturalist(lat, lng, radius_km, feature_ids, limit=limit, bbox=bbox_tuple)) if use_inaturalist else _empty(),
             ]
 
             results_list = await asyncio.gather(*tasks, return_exceptions=True)
@@ -136,7 +141,7 @@ async def extract(
                 if isinstance(res, Exception):
                     print(f"[{name}] error: {res}")
                     continue
-                if res:
+                if isinstance(res, list) and res:
                     all_results.extend(res)
                     yield json.dumps({"type": "results", "data": res}) + "\n"
 
