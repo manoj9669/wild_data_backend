@@ -14,7 +14,7 @@ REAL_IDS: Dict[str, List[str]] = {
     "hot_spring": ["wd:Q177380"],                  # hot spring
     "viewpoint":  ["wd:Q578439"],                  # viewpoint
     "beach":      ["wd:Q40080"],                   # beach
-    "lake":   ["wd:Q23397", "wd:Q4022"],       # lake, river
+    "lake":   ["wd:Q23397"],                    # lake only (removed river Q4022)
     "glacier":    ["wd:Q35666"],                   # glacier
     "volcano":    ["wd:Q8072"],                    # volcano
     "forest":     ["wd:Q4421"],                    # forest
@@ -26,7 +26,7 @@ REAL_IDS: Dict[str, List[str]] = {
 FEATURE_LABELS = {
     "waterfall": "Waterfall", "peak": "Mountain Peak", "park": "National Park",
     "cave": "Cave", "hot_spring": "Hot Spring", "viewpoint": "Viewpoint",
-    "beach": "Beach", "lake": "River / Lake", "glacier": "Glacier",
+    "beach": "Beach", "lake": "Lake", "glacier": "Glacier",
     "volcano": "Volcano", "forest": "Forest", "camp": "Campsite",
     "mtb": "MTB Trail", "hiking": "Hiking Trail",
 }
@@ -34,7 +34,6 @@ FEATURE_LABELS = {
 # Per-entity label overrides (when a feature has multiple Wikidata classes)
 _ENTITY_LABELS = {
     "wd:Q913785": "Swimming Hole",
-    "wd:Q4022":   "River",
     "wd:Q23397":  "Lake",
 }
 

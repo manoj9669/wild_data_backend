@@ -58,9 +58,6 @@ GEONAMES_FEATURE_MAP: Dict[str, List[Tuple[str, str]]] = {
         ("H", "LK"),     # Lake
         ("H", "LKS"),    # Lakes
         ("H", "LKRS"),   # Reservoir
-        ("H", "STM"),    # Stream/river
-        ("H", "STMH"),   # Headwaters
-        ("H", "GRGE"),   # Gorge
     ],
     "park": [
         ("L", "PRK"),    # Park

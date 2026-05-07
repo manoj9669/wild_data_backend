@@ -37,7 +37,7 @@ _TYPE_RULES: List[tuple] = [
     (('park', 'reserve', 'sanctuary', 'conservation'),   'National Park', 'park'),
     (('trail', 'trek', 'hike', 'pass', 'col'),           'Hiking Route',  'hiking'),
     (('cave', 'cavern', 'grotto'),                       'Cave',          'cave'),
-    (('lake', 'river', 'gorge', 'valley', 'canyon'),     'River / Lake',  'waterway'),
+    (('lake', 'reservoir', 'pond', 'tarn', 'loch'),       'Lake',          'lake'),
     (('beach', 'coast', 'bay', 'cove'),                  'Beach',         'beach'),
     (('spring', 'thermal', 'geyser'),                    'Hot Spring',    'hot_spring'),
     (('glacier', 'icefield'),                            'Glacier',       'glacier'),
