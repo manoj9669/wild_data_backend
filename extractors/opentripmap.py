@@ -34,7 +34,7 @@ OTM_KINDS: Dict[str, str] = {
     "park":       "national_parks,nature_reserves",
     "forest":     "forests,nature_reserves",
     "camp":       "campsites",
-    "lake":   "rivers,lakes",
+    "lake":   "lakes",
     "hiking":     "natural",
     "mtb":        "natural",
 }

@@ -14,7 +14,7 @@ OUTDOOR_KEYWORDS = [
     'park', 'reserve', 'sanctuary', 'refuge', 'conservation',
     'forest', 'wood', 'jungle',
     'cave', 'cavern', 'grotto',
-    'lake', 'river', 'stream', 'gorge', 'canyon', 'valley',
+    'lake', 'gorge', 'canyon', 'valley',
     'beach', 'coast', 'bay', 'cove',
     'spring', 'thermal', 'geyser',
     'glacier', 'icefield',
