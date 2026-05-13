@@ -82,7 +82,6 @@ GEONAMES_FEATURE_MAP: Dict[str, List[Tuple[str, str]]] = {
         ("T", "CLF"),    # Cliff
         ("T", "CLFS"),   # Cliffs
         ("T", "HDLD"),   # Headland
-        ("T", "PK"),     # Peak (also good viewpoints)
     ],
     "forest": [
         ("V", "FRST"),   # Forest
@@ -92,6 +91,7 @@ GEONAMES_FEATURE_MAP: Dict[str, List[Tuple[str, str]]] = {
     "hiking": [
         ("T", "PASS"),   # Mountain pass (common hiking destination)
         ("T", "TRL"),    # Trail (if available)
+        # Note: peaks (PK/MT) belong to feature "peak" only — not mixed into hiking.
     ],
 }
 

@@ -281,6 +281,7 @@ const FEATURES = [
   {id:"beach",label:"Beaches",icon:"🏖️"},
   {id:"glacier",label:"Glaciers",icon:"🧊"},
   {id:"volcano",label:"Volcanoes",icon:"🌋"},
+  {id:"wildlife_sighting",label:"Wildlife sightings (iNat)",icon:"🦁"},
 ];
 
 const OSM_HIGH = ["FR","DE","GB","IT","ES","NL","BE","AT","CH","NO","SE","FI","DK","US","CA","AU","NZ","JP","PT","GR"];
@@ -487,12 +488,13 @@ function handleMessage(msg) {
     if (['osm','wikidata','wikipedia','country'].includes(stage)) sourcesUsed.add(stage);
   }
   else if (msg.type === 'results') {
-    results.push(...(msg.data || []));
-    renderTableRows(msg.data || []);
+    const rows = (msg.data || []).filter(r => selectedFeatures.has(r.type_id));
+    results.push(...rows);
+    renderTableRows(rows);
     updateStats();
   }
   else if (msg.type === 'final') {
-    results = msg.data || [];
+    results = (msg.data || []).filter(r => selectedFeatures.has(r.type_id));
     renderTable();
     updateStats();
   }

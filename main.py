@@ -162,8 +162,11 @@ async def extract(
             yield json.dumps({"type": "progress", "stage": "dedup",
                               "message": "Deduplicating results...", "count": len(all_results)}) + "\n"
             all_results = deduplicate(all_results)
+            # Hard filter: every source must respect the requested feature IDs only.
+            allowed_ids = set(feature_ids)
+            all_results = [r for r in all_results if r.get("type_id") in allowed_ids]
             yield json.dumps({"type": "progress", "stage": "dedup",
-                              "message": f"After dedup: {len(all_results)} unique features",
+                              "message": f"After dedup & type filter: {len(all_results)} features",
                               "count": len(all_results)}) + "\n"
 
             # ── Enrich Wikipedia ───────────────────────────────────────────

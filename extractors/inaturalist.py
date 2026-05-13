@@ -12,7 +12,8 @@ INAT_BASE = "https://api.inaturalist.org/v1"
 MAX_CALLS_PER_RUN = 5
 
 INAT_RELEVANT = {"park", "forest", "waterfall", "cave", "waterway", "beach",
-                 "glacier", "volcano", "hot_spring", "peak", "viewpoint"}
+                 "glacier", "volcano", "hot_spring", "peak", "viewpoint",
+                 "wildlife_sighting"}
 
 PLACE_TYPES = {
     15: "National Park",
@@ -58,7 +59,7 @@ def _wiki_url_from_place(place: dict) -> str:
 
 async def _fetch_places(client: httpx.AsyncClient, lat: float, lng: float,
                         radius_km: float, limit: int, bbox: Optional[Tuple],
-                        feature_ids: List[str], relevant: List[str]) -> AsyncGenerator:
+                        feature_ids: List[str]) -> AsyncGenerator:
     """Fetch named nature places from /places/nearby."""
     params = _place_params(lat, lng, radius_km, limit, bbox)
     await rate_limiter.wait("api.inaturalist.org", 0.6)
@@ -86,8 +87,8 @@ async def _fetch_places(client: httpx.AsyncClient, lat: float, lng: float,
         if not f_lat or not f_lng:
             continue
 
-        fid = _PLACE_TYPE_FID.get(place_type, relevant[0])
-        if fid not in feature_ids and "park" not in feature_ids and "forest" not in feature_ids:
+        fid = _PLACE_TYPE_FID.get(place_type)
+        if not fid or fid not in feature_ids:
             continue
 
         yield {
@@ -147,7 +148,7 @@ async def _fetch_observations(client: httpx.AsyncClient, lat: float, lng: float,
         yield {
             "name":        f"{species} sighting" + (f" — {place_guess}" if place_guess else ""),
             "type":        "Wildlife Sighting",
-            "type_id":     "park",
+            "type_id":     "wildlife_sighting",
             "lat":         f_lat,
             "lng":         f_lng,
             "elevation":   "",
@@ -185,14 +186,13 @@ async def fetch_inaturalist(
         if calls_made < MAX_CALLS_PER_RUN:
             try:
                 async for item in _fetch_places(client, lat, lng, radius_km,
-                                                limit, bbox, feature_ids, relevant):
+                                                limit, bbox, feature_ids):
                     yield item
                 calls_made += 1
             except (httpx.RequestError, httpx.HTTPStatusError, ValueError) as e:
                 print(f"[iNaturalist] places error: {e}")
 
-        if calls_made < MAX_CALLS_PER_RUN and \
-                any(f in feature_ids for f in ("park", "forest", "waterway")):
+        if calls_made < MAX_CALLS_PER_RUN and "wildlife_sighting" in feature_ids:
             try:
                 async for item in _fetch_observations(client, lat, lng,
                                                       radius_km, limit, bbox):

@@ -21,7 +21,9 @@ OPENTRIPMAP_API_KEY = os.getenv("OPENTRIPMAP_API_KEY", "")
 OTM_RADIUS_URL = "https://api.opentripmap.com/0.1/en/places/radius"
 OTM_XID_URL    = "https://api.opentripmap.com/0.1/en/places/xid"
 
-# WildData feature ID → OpenTripMap kinds (comma-separated, hierarchical)
+# WildData feature ID → OpenTripMap kinds (comma-separated, hierarchical).
+# Hiking / MTB are omitted: OTM's "natural" bucket is too broad (peaks, forests, etc.)
+# and was mis-tagged as trails. Trails come from OSM + Waymarked instead.
 OTM_KINDS: Dict[str, str] = {
     "waterfall":  "waterfalls",
     "peak":       "mountain_peaks",
@@ -34,9 +36,7 @@ OTM_KINDS: Dict[str, str] = {
     "park":       "national_parks,nature_reserves",
     "forest":     "forests,nature_reserves",
     "camp":       "campsites",
-    "lake":   "lakes",
-    "hiking":     "natural",
-    "mtb":        "natural",
+    "lake":       "lakes",
 }
 
 # OpenTripMap kind → display label
@@ -60,6 +60,41 @@ KIND_LABELS: Dict[str, str] = {
 
 # Rate ratings from OTM: 0=unrated, 1=minor, 2=medium, 3=top
 RATE_CONFIDENCE = {0: "Low", 1: "Low", 2: "Medium", 3: "High"}
+
+
+def _otm_kind_to_type_id(kind_key: str, feature_ids: List[str]) -> Optional[str]:
+    """
+    Map OpenTripMap's resolved kind to a WildData type_id.
+    Returns None if this result is not one of the user's selected types.
+    """
+    if kind_key == "nature_reserves":
+        if "park" in feature_ids:
+            return "park"
+        if "forest" in feature_ids:
+            return "forest"
+        return None
+
+    direct = {
+        "waterfalls": "waterfall",
+        "mountain_peaks": "peak",
+        "caves": "cave",
+        "beaches": "beach",
+        "thermal_springs": "hot_spring",
+        "glaciers": "glacier",
+        "volcanoes": "volcano",
+        "viewpoints": "viewpoint",
+        "national_parks": "park",
+        "forests": "forest",
+        "campsites": "camp",
+        "lakes": "lake",
+        "rivers": "lake",  # OTM river POIs → lakes/water if user asked for lakes
+    }
+    tid = direct.get(kind_key)
+    if tid == "lake" and "lake" not in feature_ids:
+        return None
+    if tid and tid in feature_ids:
+        return tid
+    return None
 
 
 def _primary_kind(kinds_str: str) -> str:
@@ -246,7 +281,11 @@ async def fetch_opentripmap(
                     rate      = props.get("rate", 0)
                     kinds_str = props.get("kinds", kinds)
                     kind_key  = _primary_kind(kinds_str)
-                    type_label = KIND_LABELS.get(kind_key, fid.replace("_", " ").title())
+                    type_id   = _otm_kind_to_type_id(kind_key, feature_ids)
+                    if not type_id:
+                        continue
+
+                    type_label = KIND_LABELS.get(kind_key, type_id.replace("_", " ").title())
                     confidence = RATE_CONFIDENCE.get(rate, "Medium")
 
                     # Fetch detail for notable places (top 40 per feature type)
@@ -284,7 +323,7 @@ async def fetch_opentripmap(
                     yield {
                         "name":        name,
                         "type":        type_label,
-                        "type_id":     fid,
+                        "type_id":     type_id,
                         "lat":         round(f_lat, 6),
                         "lng":         round(f_lng, 6),
                         "elevation":   "",

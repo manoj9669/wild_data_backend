@@ -118,9 +118,10 @@ async def fetch_wikipedia_geo(
                         continue
 
                 type_label, type_id = guess_type(title)
-                
-                # Filter by requested features
-                if type_id not in feature_ids and 'viewpoint' not in feature_ids:
+
+                # Only keep articles whose inferred type is in the user's selection.
+                # (Previously, selecting "viewpoint" incorrectly allowed every article through.)
+                if type_id not in feature_ids:
                     continue
 
                 wiki_url = f"https://en.wikipedia.org/wiki/{title.replace(' ', '_')}"
