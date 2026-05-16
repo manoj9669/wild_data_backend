@@ -24,6 +24,9 @@ OUTDOOR_KEYWORDS = [
     'desert', 'dune',
     'reef', 'lagoon',
     'hot spring', 'national park', 'wildlife',
+    # Hindi / Himalayan geographic terms
+    'jharna', 'tal', 'kund', 'bugyal', 'ghati', 'dhar',
+    'nadi', 'nala', 'nallah', 'tso', 'chhu',
 ]
 
 def is_outdoor_relevant(title: str) -> bool:
@@ -32,17 +35,20 @@ def is_outdoor_relevant(title: str) -> bool:
 
 # Lookup table replaces 11 if-statements — reduces cyclomatic complexity from D(23) to A
 _TYPE_RULES: List[tuple] = [
-    (('fall', 'falls', 'cascade', 'waterfall'),          'Waterfall',     'waterfall'),
-    (('peak', 'mount', 'mountain', 'summit', 'hill'),    'Mountain Peak', 'peak'),
-    (('park', 'reserve', 'sanctuary', 'conservation'),   'National Park', 'park'),
-    (('trail', 'trek', 'hike', 'pass', 'col'),           'Hiking Route',  'hiking'),
-    (('cave', 'cavern', 'grotto'),                       'Cave',          'cave'),
-    (('lake', 'reservoir', 'pond', 'tarn', 'loch'),       'Lake',          'lake'),
-    (('beach', 'coast', 'bay', 'cove'),                  'Beach',         'beach'),
-    (('spring', 'thermal', 'geyser'),                    'Hot Spring',    'hot_spring'),
-    (('glacier', 'icefield'),                            'Glacier',       'glacier'),
-    (('volcano', 'crater'),                              'Volcano',       'volcano'),
-    (('viewpoint', 'lookout', 'overlook'),               'Viewpoint',     'viewpoint'),
+    (('fall', 'falls', 'cascade', 'waterfall', 'jharna'), 'Waterfall',     'waterfall'),
+    (('peak', 'mount', 'mountain', 'summit', 'hill'),      'Mountain Peak', 'peak'),
+    (('park', 'reserve', 'sanctuary', 'conservation'),     'National Park', 'park'),
+    (('trail', 'trek', 'hike', 'pass', 'col', 'ghati'),   'Hiking Route',  'hiking'),
+    (('cave', 'cavern', 'grotto'),                         'Cave',          'cave'),
+    # tal/kund/tso/chhu are Hindi/Tibetan for lake — match before 'gorge'/'valley'
+    (('lake', 'reservoir', 'pond', 'tarn', 'loch',
+      'tal', 'kund', 'tso', 'chhu'),                       'Lake',          'lake'),
+    (('beach', 'coast', 'bay', 'cove'),                    'Beach',         'beach'),
+    (('spring', 'thermal', 'geyser'),                      'Hot Spring',    'hot_spring'),
+    (('glacier', 'icefield'),                              'Glacier',       'glacier'),
+    (('volcano', 'crater'),                                'Volcano',       'volcano'),
+    (('viewpoint', 'lookout', 'overlook'),                 'Viewpoint',     'viewpoint'),
+    (('gorge', 'canyon', 'valley', 'dhar', 'nala', 'nallah', 'nadi'), 'Gorge', 'gorge'),
 ]
 
 def guess_type(title: str) -> tuple:

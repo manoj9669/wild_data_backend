@@ -21,6 +21,7 @@ from extractors.ai_enricher import enrich_with_ai
 from extractors.here import fetch_here
 from extractors.inaturalist import fetch_inaturalist
 from extractors.refuges import fetch_refuges
+from extractors.wikidata import fetch_wikidata
 from utils.deduplicator import deduplicate
 
 app = FastAPI(
@@ -40,8 +41,16 @@ OSM_HIGH = {
     "FR","DE","GB","IT","ES","NL","BE","AT","CH","NO","SE","FI","DK","PL","CZ",
     "US","CA","AU","NZ","JP","PT","GR","HU","RO","SK","SI","HR","RS","BG","CY",
     "LV","LT","EE","LU","MT","IS","BR","ZA","AR","CL","CO","MX","KR","TW","SG",
+    "IN",  # India OSM coverage in nature/outdoor areas is now reliable enough
 }
-OSM_LOW = {"IN","NP","PK","BD","MM","KH","LA","AF","IQ","SY","LY","SD","ET","SO","MG","CN","VN","KH"}
+OSM_LOW = {"NP","PK","BD","MM","KH","LA","AF","IQ","SY","LY","SD","ET","SO","MG","VN"}
+
+# Refuges.info covers European mountain huts only — skip for all other countries.
+_REFUGES_COUNTRIES = {
+    "FR","DE","IT","ES","AT","CH","NO","SE","FI","DK","PL","CZ","PT","GR",
+    "HU","RO","SK","SI","HR","RS","BG","LV","LT","EE","LU","MT","IS","MC",
+    "SM","LI","AD","ME","MK","AL","BA","UK","GB",
+}
 
 def osm_quality(cc: str) -> str:
     if cc in OSM_HIGH:
@@ -88,6 +97,7 @@ async def extract(
     use_geoapify: bool = Query(False),
     use_here: bool = Query(False),
     use_inaturalist: bool = Query(False),
+    use_wikidata: bool = Query(False),
     search_mode: str = Query(""),
     region_bbox: str = Query(""),
 ):
@@ -124,11 +134,15 @@ async def extract(
                 ("Protected Planet", fetch_protected_planet(lat, lng, radius_km, feature_ids, country_code=cc) if any(f in feature_ids for f in ("park", "forest")) else _empty()),
                 ("Country", fetch_country_specific(cc, lat, lng, radius_km, feature_ids) if cc and cc in COUNTRY_EXTRACTORS else _empty()),
                 ("UNESCO", fetch_unesco_sites(lat, lng, radius_km, limit=100) if "unesco" in feature_ids else _empty()),
-                ("Refuges", fetch_refuges(lat, lng, radius_km, feature_ids) if any(f in feature_ids for f in ("hut", "camp")) else _empty()),
+                # Refuges.info covers European mountain huts only
+                ("Refuges", fetch_refuges(lat, lng, radius_km, feature_ids) if (
+                    any(f in feature_ids for f in ("hut", "camp")) and cc in _REFUGES_COUNTRIES
+                ) else _empty()),
                 ("Geoapify", fetch_geoapify(lat, lng, radius_km, feature_ids, limit=limit) if use_geoapify else _empty()),
                 ("Foursquare", fetch_foursquare(lat, lng, radius_km, feature_ids, limit=limit) if use_foursquare else _empty()),
                 ("HERE", fetch_here(lat, lng, radius_km, feature_ids, limit=limit, bbox=bbox_tuple) if use_here else _empty()),
                 ("iNaturalist", fetch_inaturalist(lat, lng, radius_km, feature_ids, limit=limit, bbox=bbox_tuple) if use_inaturalist else _empty()),
+                ("Wikidata", fetch_wikidata(lat, lng, radius_km, feature_ids, limit=min(limit, 300)) if use_wikidata else _empty()),
             ]
 
             async def run_and_stream(name, gen):

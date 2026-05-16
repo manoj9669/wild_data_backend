@@ -54,12 +54,6 @@ def get_limits(provider: str) -> Optional[Dict[str, Optional[int]]]:
     elif provider == "here":
         day = _normalize_limit(_int_env("HERE_DAILY_CALL_LIMIT", 8000), allow_zero=True)
         month = _normalize_limit(_int_env("HERE_MONTHLY_CALL_LIMIT", 240000), allow_zero=False)
-    elif provider == "opentripmap":
-        day = _normalize_limit(_int_env("OTM_DAILY_CALL_LIMIT", 4000), allow_zero=True)
-        month = _normalize_limit(_int_env("OTM_MONTHLY_CALL_LIMIT", 0), allow_zero=False)
-    elif provider == "here":
-        day = _normalize_limit(_int_env("HERE_DAILY_CALL_LIMIT", 8000), allow_zero=True)
-        month = _normalize_limit(_int_env("HERE_MONTHLY_CALL_LIMIT", 240000), allow_zero=False)
     else:
         return None
 

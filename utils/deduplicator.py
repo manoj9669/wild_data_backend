@@ -40,6 +40,20 @@ _SYNONYMS = [
     (r'\bspring\b', ''),
     (r'\bpoint\b', ''),
     (r'\bpass\b', ''),
+    # Hindi / Himalayan geographic suffixes — so "Bhagsu Jharna" deduplicates
+    # against "Bhagsu Waterfall", "Chandratal" against "Chandra Tal", etc.
+    (r'\bjharna\b', ''),     # waterfall
+    (r'\btal\b', ''),        # lake
+    (r'\bkund\b', ''),       # pool / pond
+    (r'\bbugyal\b', ''),     # high-altitude alpine meadow
+    (r'\bghati\b', ''),      # valley / gorge
+    (r'\bdhar\b', ''),       # mountain ridge
+    (r'\bnadi\b', ''),       # river
+    (r'\bchhu\b', ''),       # Tibetan: lake / stream
+    (r'\bcho\b', ''),        # Tibetan: lake (e.g. Cho La)
+    (r'\btso\b', ''),        # Tibetan: lake (e.g. Pangong Tso)
+    (r'\bnala\b', ''),       # stream / rivulet (also nallah)
+    (r'\bnallah\b', ''),     # stream
 ]
 
 _STOP = {'a', 'an', 'the', 'of', 'in', 'at', 'on', 'near', 'and', 'de', 'la', 'le', ''}

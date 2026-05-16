@@ -26,16 +26,17 @@ FEATURE_TAGS = {
     "peak":         ('node', '"natural"="peak"'),
     "park":         ('relation', '"boundary"="national_park"'),
     "viewpoint":    ('node', '"tourism"="viewpoint"'),
-    "camp":         ('node|way', '"tourism"="camp_site"'),
-    "hut":          ('node', '"tourism"="wilderness_hut"'),
+    # Free campsites only — exclude paid resorts and private access sites
+    "camp":         ('nw', '"tourism"="camp_site"]["fee"!="yes"]["access"!="private"'),
+    "hut":          ('nw', '"tourism"="wilderness_hut"]["fee"!="yes"]["access"!="private"'),
     "cave":         ('node', '"natural"="cave_entrance"'),
     "hot_spring":   ('node', '"natural"="hot_spring"'),
-    "lake":         ('node|way', '"natural"="water"["water"="lake"]'),
-    "beach":        ('node|way', '"natural"="beach"'),
-    "glacier":      ('way', '"natural"="glacier"'),
+    "lake":         ('nw', '"natural"="water"]["water"="lake"'),
+    "beach":        ('nw', '"natural"="beach"'),
+    "glacier":      ('wr', '"natural"="glacier"'),
     "volcano":      ('node', '"natural"="volcano"'),
-    "gorge":        ('node|way', '"natural"="gorge"'),
-    "meadow":       ('way|relation', '"natural"="meadow"'),
+    "gorge":        ('nw', '"natural"="gorge"'),
+    "meadow":       ('wr', '"natural"="meadow"'),
 }
 
 FEATURE_LABELS = {

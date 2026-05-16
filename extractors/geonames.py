@@ -66,9 +66,7 @@ GEONAMES_FEATURE_MAP: Dict[str, List[Tuple[str, str]]] = {
         ("L", "RES"),    # Reserve
     ],
     "camp": [
-        ("S", "CAMP"),   # Camp
-        ("S", "RSRT"),   # Resort
-        ("P", "PPLL"),   # Locality (some campgrounds registered here)
+        ("S", "CAMP"),   # Camp — only actual campsites, not resorts or localities
     ],
     "glacier": [
         ("T", "GLCR"),   # Glacier
