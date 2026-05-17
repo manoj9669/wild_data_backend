@@ -63,7 +63,12 @@ def get_limits(provider: str) -> Optional[Dict[str, Optional[int]]]:
 class UsageCaps:
     def __init__(self, path: str):
         self.path = Path(path)
-        self._lock = asyncio.Lock()
+        self._lock: Optional[asyncio.Lock] = None
+
+    def _get_lock(self) -> asyncio.Lock:
+        if self._lock is None:
+            self._lock = asyncio.Lock()
+        return self._lock
 
     def _load(self) -> Dict:
         try:
@@ -103,7 +108,7 @@ class UsageCaps:
         if limits is None:
             return True
 
-        async with self._lock:
+        async with self._get_lock():
             data = self._load()
             rec = data.get(provider, {})
             self._ensure_periods(rec)
