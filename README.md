@@ -1,3 +1,13 @@
+---
+title: WildData API
+emoji: 🌲
+colorFrom: green
+colorTo: teal
+sdk: docker
+app_port: 8080
+pinned: false
+---
+
 # WildData — Outdoor Feature Extractor
 
 Extracts outdoor features (waterfalls, hiking routes, peaks, parks etc.) from:

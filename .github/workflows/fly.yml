@@ -1,4 +1,4 @@
-name: Deploy to Fly.io
+name: Deploy to HuggingFace Spaces
 
 on:
   push:
@@ -13,10 +13,14 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          lfs: true
 
-      - uses: superfly/flyctl-actions/setup-flyctl@master
-
-      - name: Deploy
-        run: flyctl deploy --remote-only
+      - name: Push to HuggingFace Space
         env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_USERNAME: ${{ secrets.HF_USERNAME }}
+        run: |
+          git remote add hf https://$HF_USERNAME:$HF_TOKEN@huggingface.co/spaces/$HF_USERNAME/wilddata-api
+          git push hf main --force
