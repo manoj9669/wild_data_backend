@@ -2,7 +2,7 @@
 title: WildData API
 emoji: 🌲
 colorFrom: green
-colorTo: teal
+colorTo: blue
 sdk: docker
 app_port: 8080
 pinned: false
