@@ -150,10 +150,10 @@ tr:hover td{background:rgba(61,220,132,.03);color:var(--text)}
       <div class="panel">
         <div class="panel-title">⚙️ Backend API</div>
         <div class="api-input-wrap">
-          <label>YOUR RENDER.COM API URL</label>
+          <label>API URL</label>
           <input class="api-input" id="apiUrl"
-            placeholder="https://wilddata-api.onrender.com"
-            value="https://wilddata-api.onrender.com"/>
+            placeholder="https://wilddata-backend-wilddata-api.hf.space"
+            value="https://wilddata-backend-wilddata-api.hf.space"/>
         </div>
         <button onclick="testConnection()" style="width:100%;padding:8px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;color:var(--text2);font-size:12px;cursor:pointer;font-family:'Syne',sans-serif;transition:all .15s" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
           Test Connection
@@ -282,10 +282,11 @@ const FEATURES = [
   {id:"glacier",label:"Glaciers",icon:"🧊"},
   {id:"volcano",label:"Volcanoes",icon:"🌋"},
   {id:"wildlife_sighting",label:"Wildlife sightings (iNat)",icon:"🦁"},
+  {id:"unesco",label:"UNESCO Heritage",icon:"🌐"},
 ];
 
 const OSM_HIGH = ["FR","DE","GB","IT","ES","NL","BE","AT","CH","NO","SE","FI","DK","US","CA","AU","NZ","JP","PT","GR"];
-const OSM_LOW  = ["IN","NP","PK","BD","CN","MM","KH","LA","AF"];
+const OSM_LOW  = ["NP","PK","BD","CN","MM","KH","LA","AF"];
 
 let selectedPlace = null;
 let selectedFeatures = new Set(["waterfall","hiking","peak"]);
