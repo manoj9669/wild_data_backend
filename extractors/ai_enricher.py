@@ -53,8 +53,8 @@ async def _gemini_request(prompt: str) -> str:
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
         "generationConfig": {
-            "temperature": 0.3,
-            "maxOutputTokens": 200,
+            "temperature": 0.4,
+            "maxOutputTokens": 800,
         },
     }
 
@@ -115,12 +115,22 @@ async def _batch_describe(features: List[Dict[str, Any]]) -> List[str]:
 
     items = []
     for i, f in enumerate(features):
-        region = f.get("region") or f.get("country") or ""
-        items.append(f'{i+1}. {f["name"]} ({f.get("type","feature")}{", " + region if region else ""})')
+        parts = [f.get("type", "feature")]
+        if f.get("region"):  parts.append(f['region'])
+        if f.get("country"): parts.append(f['country'])
+        if f.get("elevation") and str(f["elevation"]).strip(): parts.append(f'elev {f["elevation"]}m')
+        items.append(f'{i+1}. {f["name"]} ({", ".join(parts)})')
 
     prompt = (
-        "For each geographic feature below, write a single sentence (max 25 words) describing "
-        "what it is and why it's notable for outdoor visitors. Be specific and factual. "
+        "For each geographic feature below, write 2-3 specific sentences (50-80 words) "
+        "describing what makes it special for outdoor visitors. "
+        "Include concrete details: physical characteristics (height of falls, depth of cave, peak elevation), "
+        "surrounding ecosystem (forest type, river fed by snowmelt, etc.), best activities (swimming, trekking, photography), "
+        "and the best season or unique draw. "
+        "NEVER use these vague phrases: 'characteristic landscape', 'typical of the region', "
+        "'distinct atmosphere', 'natural setting', 'unique environment', 'rural area', "
+        "'gives it a', 'creating a', 'presents an opportunity'. "
+        "Be factual and specific. If details are unknown, focus on what outdoor visitors will experience. "
         "Reply with ONLY a JSON array of strings, one per item, in the same order.\n\n"
         + "\n".join(items)
     )
