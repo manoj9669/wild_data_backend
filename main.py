@@ -16,6 +16,7 @@ from extractors.waymarked import fetch_waymarked
 from extractors.protected_planet import fetch_protected_planet
 from extractors.unesco import fetch_unesco_sites
 from extractors.enrichment import enrich_geocoding, enrich_elevation, geocode_place
+from extractors.wikimedia_commons import enrich_wikimedia_images
 from extractors.countries import fetch_country_specific, COUNTRY_EXTRACTORS
 from extractors.ai_enricher import enrich_with_ai
 from extractors.here import fetch_here
@@ -96,6 +97,7 @@ async def extract(
     do_enrich_elevation: bool = Query(True),
     do_enrich_geocoding: bool = Query(True),
     do_enrich_ai: bool = Query(True),
+    do_enrich_images: bool = Query(True),   # CC-0 Wikimedia Commons photos
     use_foursquare: bool = Query(False),
     use_geoapify: bool = Query(False),
     use_here: bool = Query(False),
@@ -234,6 +236,18 @@ async def extract(
                 all_results = await enrich_elevation(all_results, max_points=150)
                 yield json.dumps({"type": "progress", "stage": "elevation",
                                   "message": "Elevation done", "count": len(all_results)}) + "\n"
+
+            # ── Wikimedia Commons CC-0 images ─────────────────────────────
+            if do_enrich_images:
+                no_img = sum(1 for r in all_results if not r.get("image"))
+                yield json.dumps({"type": "progress", "stage": "images",
+                                  "message": f"Fetching CC-0 images for {no_img} places...",
+                                  "count": len(all_results)}) + "\n"
+                all_results = await enrich_wikimedia_images(all_results, max_enrichments=80)
+                got_img = sum(1 for r in all_results if r.get("image"))
+                yield json.dumps({"type": "progress", "stage": "images",
+                                  "message": f"Images done — {got_img} places have a photo",
+                                  "count": len(all_results)}) + "\n"
 
             # ── AI enrichment ──────────────────────────────────────────────
             if do_enrich_ai:

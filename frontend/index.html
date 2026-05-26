@@ -211,6 +211,10 @@ tr:hover td{background:rgba(61,220,132,.03);color:var(--text)}
             <input type="checkbox" id="enrichElev" checked style="accent-color:var(--accent)"/>
             Elevation data
           </label>
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text2);cursor:pointer">
+            <input type="checkbox" id="enrichImages" checked style="accent-color:var(--accent)"/>
+            CC-0 images (Wikimedia Commons)
+          </label>
         </div>
       </div>
 
@@ -453,6 +457,7 @@ async function startExtraction() {
     do_enrich_wiki: document.getElementById('enrichWiki').checked,
     do_enrich_elevation: document.getElementById('enrichElev').checked,
     do_enrich_geocoding: document.getElementById('enrichGeo').checked,
+    do_enrich_images: document.getElementById('enrichImages').checked,
   });
   if (selectedPlace._searchMode === 'region' && selectedPlace._regionBbox) {
     params.set('search_mode', 'region');
