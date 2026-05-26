@@ -22,6 +22,9 @@ from extractors.here import fetch_here
 from extractors.inaturalist import fetch_inaturalist
 from extractors.refuges import fetch_refuges
 from extractors.wikidata import fetch_wikidata
+from extractors.overture import fetch_overture
+from extractors.wikivoyage import fetch_wikivoyage
+from extractors.gbif import fetch_gbif
 from utils.deduplicator import deduplicate
 
 app = FastAPI(
@@ -98,6 +101,9 @@ async def extract(
     use_here: bool = Query(False),
     use_inaturalist: bool = Query(False),
     use_wikidata: bool = Query(False),
+    use_overture: bool = Query(True),    # Free, no key — on by default
+    use_wikivoyage: bool = Query(True),  # Free, no key — rich travel descriptions
+    use_gbif: bool = Query(False),       # Free, no key — nature hotspots (slower)
     search_mode: str = Query(""),
     region_bbox: str = Query(""),
 ):
@@ -143,6 +149,9 @@ async def extract(
                 ("HERE", fetch_here(lat, lng, radius_km, feature_ids, limit=limit, bbox=bbox_tuple) if use_here else _empty()),
                 ("iNaturalist", fetch_inaturalist(lat, lng, radius_km, feature_ids, limit=limit, bbox=bbox_tuple) if use_inaturalist else _empty()),
                 ("Wikidata", fetch_wikidata(lat, lng, radius_km, feature_ids, limit=min(limit, 300)) if use_wikidata else _empty()),
+                ("Overture",    fetch_overture(lat, lng, radius_km, feature_ids, limit=min(limit, 200)) if use_overture else _empty()),
+                ("WikiVoyage",  fetch_wikivoyage(lat, lng, radius_km, feature_ids, limit=min(limit, 100)) if use_wikivoyage else _empty()),
+                ("GBIF",        fetch_gbif(lat, lng, radius_km, feature_ids, limit=min(limit, 80)) if use_gbif else _empty()),
             ]
 
             async def run_and_stream(name, gen):

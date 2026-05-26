@@ -36,7 +36,7 @@ TYPE_MAP = {
     "mountain":       "peak",
     "wetland":        "wetland",
     "beach":          "beach",
-    "gorge":          "canyon",
+    "gorge":          "gorge",
     "waterfall":      "waterfall",
     "cave":           "cave",
 }
@@ -135,8 +135,10 @@ async def _fetch_natura2000(lat: float, lng: float, radius_km: float, client: ht
                     f_lng, f_lat = geom["coordinates"][:2]
                 elif geom.get("type") in ("Polygon", "MultiPolygon"):
                     coords = geom["coordinates"]
-                    flat = coords[0][0] if geom["type"] == "Polygon" else coords[0][0][0]
-                    f_lng, f_lat = flat[0], flat[1]
+                    # Average exterior ring vertices for centroid (not just first corner)
+                    ring = coords[0] if geom["type"] == "Polygon" else coords[0][0]
+                    f_lng = sum(pt[0] for pt in ring) / len(ring)
+                    f_lat = sum(pt[1] for pt in ring) / len(ring)
 
                 if f_lat is None or not _within_radius(lat, lng, f_lat, f_lng, radius_km):
                     continue
@@ -149,7 +151,7 @@ async def _fetch_natura2000(lat: float, lng: float, radius_km: float, client: ht
                     "type":        feat_type,
                     "lat":         round(f_lat, 6),
                     "lng":         round(f_lng, 6),
-                    "elevation":   None,
+                    "elevation":   "",
                     "region":      props.get("MS_CODE", "")[:4],
                     "country":     "Greece",
                     "description": f"Natura2000 protected site ({props.get('MS_SITETYPE','')}) — {props.get('MS_AREAHA','?')} ha",
@@ -215,7 +217,7 @@ async def fetch_greece(
                             "type":        "lake",
                             "lat":         round(f_lat, 6),
                             "lng":         round(f_lng, 6),
-                            "elevation":   None,
+                            "elevation":   "",
                             "region":      rec.get("PERIFEREIA", ""),
                             "country":     "Greece",
                             "description": rec.get("DESCR", ""),
@@ -256,7 +258,7 @@ async def fetch_greece(
                             "type":        "nature_reserve",
                             "lat":         round(f_lat, 6),
                             "lng":         round(f_lng, 6),
-                            "elevation":   None,
+                            "elevation":   "",
                             "region":      rec.get("PERIFEREIA", ""),
                             "country":     "Greece",
                             "description": rec.get("CATEGORY", ""),
@@ -293,7 +295,7 @@ async def fetch_greece(
                         "type":        "national_park",
                         "lat":         park["lat"],
                         "lng":         park["lng"],
-                        "elevation":   None,
+                        "elevation":   "",
                         "region":      "",
                         "country":     "Greece",
                         "description": park["desc"],

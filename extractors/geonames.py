@@ -22,8 +22,11 @@ from typing import List, Dict, Any, AsyncGenerator, Tuple
 from utils.rate_limiter import rate_limiter
 
 GEONAMES_USERNAME = os.getenv("GEONAMES_USERNAME", "demo")
-GEONAMES_SEARCH_URL = "http://api.geonames.org/searchJSON"
-GEONAMES_NEARBY_URL = "http://api.geonames.org/findNearbyJSON"
+if GEONAMES_USERNAME == "demo":
+    print("[GeoNames] WARNING: using 'demo' account — limited to 1,000 req/day. "
+          "Set GEONAMES_USERNAME env var for full access.")
+GEONAMES_SEARCH_URL = "https://secure.geonames.org/searchJSON"
+GEONAMES_NEARBY_URL = "https://secure.geonames.org/findNearbyJSON"
 DEFAULT_USER_AGENT = "WildData/1.0 (gowild.co.in)"
 
 # GeoNames feature class + code(s) per WildData feature ID

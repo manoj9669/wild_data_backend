@@ -126,8 +126,9 @@ async def enrich_elevation(
             for j, elev_data in enumerate(elevations):
                 elev = elev_data.get("elevation")
                 if elev is not None:
-                    idx = results.index(batch[j])
-                    results[idx]["elevation"] = f"{round(elev)}m"
+                    # batch[j] is a reference to the same dict object in results —
+                    # mutate directly instead of O(n) list.index() search
+                    batch[j]["elevation"] = f"{round(elev)}m"
 
         except Exception as e:
             print(f"[Elevation] batch {i//BATCH + 1} error: {e}")

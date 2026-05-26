@@ -118,7 +118,7 @@ async def _batch_describe(features: List[Dict[str, Any]]) -> List[str]:
         parts = [f.get("type", "feature")]
         if f.get("region"):  parts.append(f['region'])
         if f.get("country"): parts.append(f['country'])
-        if f.get("elevation") and str(f["elevation"]).strip(): parts.append(f'elev {f["elevation"]}m')
+        if f.get("elevation") and str(f["elevation"]).strip(): parts.append(f'elev {f["elevation"]}')
         items.append(f'{i+1}. {f["name"]} ({", ".join(parts)})')
 
     prompt = (
@@ -230,8 +230,28 @@ async def enrich_with_ai(
 
     BATCH_SIZE = 10  # Keep prompts short for reliability
 
-    # ── Step 1: Validation disabled — was incorrectly removing valid results
-    # Description generation only
+    # ── Step 1: Soft validation — flag likely misclassifications as Low confidence
+    # Doesn't remove features (old hard-removal approach caused false positives);
+    # sets confidence="Low" + validation_flag so callers can filter if needed.
+    if validate:
+        validate_candidates = [
+            (i, r) for i, r in enumerate(results)
+            if r.get("type_id") in ENRICHABLE_TYPES and r.get("confidence") != "Low"
+        ][:max_validations]
+
+        for batch_start in range(0, len(validate_candidates), BATCH_SIZE):
+            batch = validate_candidates[batch_start:batch_start + BATCH_SIZE]
+            indices = [i for i, _ in batch]
+            features = [f for _, f in batch]
+            keep_flags = await _validate_batch(features)
+            for idx, keep in zip(indices, keep_flags):
+                if not keep:
+                    results[idx]["confidence"] = "Low"
+                    results[idx]["validation_flag"] = "type_mismatch"
+
+        flagged = sum(1 for r in results if r.get("validation_flag") == "type_mismatch")
+        if flagged:
+            print(f"[Gemini] Validation: {flagged} items flagged as type_mismatch (kept, confidence=Low)")
 
     # ── Step 2: Generate descriptions ─────────────────────────────────────────
     describe_candidates = [
