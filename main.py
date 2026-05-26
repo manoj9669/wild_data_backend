@@ -120,6 +120,19 @@ async def extract(
         except (ValueError, AttributeError):
             pass
 
+    # Effective center + radius for extractors that don't support bbox.
+    # When a region bbox is active the frontend sends the bbox center as lat/lng,
+    # but we also expand the radius to guarantee the bbox corners are covered.
+    eff_lat, eff_lng, eff_radius = lat, lng, radius_km
+    if bbox_tuple:
+        # bbox_tuple = (south, west, north, east)
+        eff_lat = (bbox_tuple[0] + bbox_tuple[2]) / 2
+        eff_lng = (bbox_tuple[1] + bbox_tuple[3]) / 2
+        lat_half_km = (bbox_tuple[2] - bbox_tuple[0]) / 2 * 111.0
+        lng_half_km = (bbox_tuple[3] - bbox_tuple[1]) / 2 * 111.0 * 0.866
+        bbox_radius = (lat_half_km ** 2 + lng_half_km ** 2) ** 0.5
+        eff_radius = min(max(bbox_radius, radius_km), 5000)
+
     osm_limit = limit if quality == "high" else min(limit, 150)
     trail_features = [f for f in feature_ids if f in ("hiking", "mtb")]
 
@@ -132,26 +145,28 @@ async def extract(
 
             # ── Parallel fetch all data sources ───────────────────────────
             tasks_info = [
-                ("OSM", fetch_osm(lat, lng, int(radius_km * 1000), feature_ids, osm_limit, bbox=bbox_tuple)),
-                ("OpenTripMap", fetch_opentripmap(lat, lng, radius_km, feature_ids, limit=200, bbox=bbox_tuple)),
-                ("Wikipedia", fetch_wikipedia_geo(lat, lng, int(radius_km * 1000), feature_ids, bbox=bbox_tuple)),
-                ("GeoNames", fetch_geonames(lat, lng, radius_km, feature_ids, country_code=cc, limit=100)),
-                ("Waymarked", fetch_waymarked(lat, lng, radius_km, trail_features, limit=100) if trail_features else _empty()),
-                ("Protected Planet", fetch_protected_planet(lat, lng, radius_km, feature_ids, country_code=cc) if any(f in feature_ids for f in ("park", "forest")) else _empty()),
-                ("Country", fetch_country_specific(cc, lat, lng, radius_km, feature_ids) if cc and cc in COUNTRY_EXTRACTORS else _empty()),
-                ("UNESCO", fetch_unesco_sites(lat, lng, radius_km, limit=100) if "unesco" in feature_ids else _empty()),
+                # Bbox-aware extractors: use bbox_tuple directly when in region mode
+                ("OSM", fetch_osm(eff_lat, eff_lng, int(eff_radius * 1000), feature_ids, osm_limit, bbox=bbox_tuple)),
+                ("OpenTripMap", fetch_opentripmap(eff_lat, eff_lng, eff_radius, feature_ids, limit=200, bbox=bbox_tuple)),
+                ("Wikipedia", fetch_wikipedia_geo(eff_lat, eff_lng, int(eff_radius * 1000), feature_ids, bbox=bbox_tuple)),
+                # Non-bbox extractors: use eff_lat/eff_lng/eff_radius (bbox center + expanded radius)
+                ("GeoNames", fetch_geonames(eff_lat, eff_lng, eff_radius, feature_ids, country_code=cc, limit=100)),
+                ("Waymarked", fetch_waymarked(eff_lat, eff_lng, eff_radius, trail_features, limit=100) if trail_features else _empty()),
+                ("Protected Planet", fetch_protected_planet(eff_lat, eff_lng, eff_radius, feature_ids, country_code=cc) if any(f in feature_ids for f in ("park", "forest")) else _empty()),
+                ("Country", fetch_country_specific(cc, eff_lat, eff_lng, eff_radius, feature_ids) if cc and cc in COUNTRY_EXTRACTORS else _empty()),
+                ("UNESCO", fetch_unesco_sites(eff_lat, eff_lng, eff_radius, limit=100) if "unesco" in feature_ids else _empty()),
                 # Refuges.info covers European mountain huts only
-                ("Refuges", fetch_refuges(lat, lng, radius_km, feature_ids) if (
+                ("Refuges", fetch_refuges(eff_lat, eff_lng, eff_radius, feature_ids) if (
                     any(f in feature_ids for f in ("hut", "camp")) and cc in _REFUGES_COUNTRIES
                 ) else _empty()),
-                ("Geoapify", fetch_geoapify(lat, lng, radius_km, feature_ids, limit=limit) if use_geoapify else _empty()),
-                ("Foursquare", fetch_foursquare(lat, lng, radius_km, feature_ids, limit=limit) if use_foursquare else _empty()),
-                ("HERE", fetch_here(lat, lng, radius_km, feature_ids, limit=limit, bbox=bbox_tuple) if use_here else _empty()),
-                ("iNaturalist", fetch_inaturalist(lat, lng, radius_km, feature_ids, limit=limit, bbox=bbox_tuple) if use_inaturalist else _empty()),
-                ("Wikidata", fetch_wikidata(lat, lng, radius_km, feature_ids, limit=min(limit, 300)) if use_wikidata else _empty()),
-                ("Overture",    fetch_overture(lat, lng, radius_km, feature_ids, limit=min(limit, 200)) if use_overture else _empty()),
-                ("WikiVoyage",  fetch_wikivoyage(lat, lng, radius_km, feature_ids, limit=min(limit, 100)) if use_wikivoyage else _empty()),
-                ("GBIF",        fetch_gbif(lat, lng, radius_km, feature_ids, limit=min(limit, 80)) if use_gbif else _empty()),
+                ("Geoapify", fetch_geoapify(eff_lat, eff_lng, eff_radius, feature_ids, limit=limit) if use_geoapify else _empty()),
+                ("Foursquare", fetch_foursquare(eff_lat, eff_lng, eff_radius, feature_ids, limit=limit) if use_foursquare else _empty()),
+                ("HERE", fetch_here(eff_lat, eff_lng, eff_radius, feature_ids, limit=limit, bbox=bbox_tuple) if use_here else _empty()),
+                ("iNaturalist", fetch_inaturalist(eff_lat, eff_lng, eff_radius, feature_ids, limit=limit, bbox=bbox_tuple) if use_inaturalist else _empty()),
+                ("Wikidata", fetch_wikidata(eff_lat, eff_lng, eff_radius, feature_ids, limit=min(limit, 300)) if use_wikidata else _empty()),
+                ("Overture",    fetch_overture(eff_lat, eff_lng, eff_radius, feature_ids, limit=min(limit, 200)) if use_overture else _empty()),
+                ("WikiVoyage",  fetch_wikivoyage(eff_lat, eff_lng, eff_radius, feature_ids, limit=min(limit, 100)) if use_wikivoyage else _empty()),
+                ("GBIF",        fetch_gbif(eff_lat, eff_lng, eff_radius, feature_ids, limit=min(limit, 80)) if use_gbif else _empty()),
             ]
 
             async def run_and_stream(name, gen):

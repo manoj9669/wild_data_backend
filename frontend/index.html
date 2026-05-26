@@ -397,6 +397,25 @@ function selectPlace(place) {
   document.getElementById('strategyBadge').textContent = strategy;
   document.getElementById('strategyBadge').className = 'strategy-badge ' + cls;
   document.getElementById('countryChip').classList.add('show');
+
+  // ── Region mode for administrative / boundary Nominatim types ──────────
+  // Nominatim boundingbox format: [south, north, west, east]
+  // Backend expects region_bbox as: south,west,north,east
+  const bb = place.boundingbox;
+  const adminTypes = ['administrative','boundary','state','county','district','municipality','region','province'];
+  if (bb && bb.length === 4 && adminTypes.includes(place.type)) {
+    const south = parseFloat(bb[0]), north = parseFloat(bb[1]);
+    const west  = parseFloat(bb[2]), east  = parseFloat(bb[3]);
+    selectedPlace._centerLat = ((south + north) / 2).toFixed(6);
+    selectedPlace._centerLng = ((west  + east)  / 2).toFixed(6);
+    selectedPlace._regionBbox = `${bb[0]},${bb[2]},${bb[1]},${bb[3]}`;  // south,west,north,east
+    selectedPlace._searchMode = 'region';
+  } else {
+    selectedPlace._centerLat = null;
+    selectedPlace._centerLng = null;
+    selectedPlace._regionBbox = '';
+    selectedPlace._searchMode = '';
+  }
 }
 
 function getFlagEmoji(cc) {
@@ -420,9 +439,13 @@ async function startExtraction() {
   document.getElementById('tableBody').innerHTML = '';
   updateStats();
 
+  // Use bbox center for administrative regions — more accurate than Nominatim centroid
+  const effectiveLat = selectedPlace._centerLat || selectedPlace.lat;
+  const effectiveLng = selectedPlace._centerLng || selectedPlace.lon;
+
   const params = new URLSearchParams({
-    lat: selectedPlace.lat,
-    lng: selectedPlace.lon,
+    lat: effectiveLat,
+    lng: effectiveLng,
     radius_km: document.getElementById('radiusSlider').value,
     features: [...selectedFeatures].join(','),
     limit: document.getElementById('limitInput').value,
@@ -431,9 +454,14 @@ async function startExtraction() {
     do_enrich_elevation: document.getElementById('enrichElev').checked,
     do_enrich_geocoding: document.getElementById('enrichGeo').checked,
   });
+  if (selectedPlace._searchMode === 'region' && selectedPlace._regionBbox) {
+    params.set('search_mode', 'region');
+    params.set('region_bbox', selectedPlace._regionBbox);
+  }
 
   log('Starting extraction...', 'info');
-  log(`Location: ${selectedPlace.lat}, ${selectedPlace.lon} | Radius: ${params.get('radius_km')}km`, 'info');
+  const modeLabel = selectedPlace._searchMode === 'region' ? ' [Region bbox]' : '';
+  log(`Location: ${effectiveLat}, ${effectiveLng} | Radius: ${params.get('radius_km')}km${modeLabel}`, 'info');
 
   try {
     const res = await fetch(`${apiUrl}/extract?${params}`, {
